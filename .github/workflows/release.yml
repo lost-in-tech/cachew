@@ -1,12 +1,14 @@
 name: release
 
+# release-please creates the tag and the GitHub release, so this runs against the release rather
+# than the tag push. That way the release already exists by the time the packages are attached to
+# it, and there is no race between the two workflows.
 on:
-  push:
-    tags: ["v*"]
-  workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
-  contents: write # gh release create
+  contents: write # attach the packages to the release
   id-token: write # OIDC token for NuGet trusted publishing
 
 env:
@@ -17,7 +19,11 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      # A release event checks out the default branch, which is not the commit the release points
+      # at. Build the tagged commit.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -32,14 +38,16 @@ jobs:
             exit 1
           fi
 
-      - name: Resolve version from tag
+      - name: Resolve version from the release tag
         id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9] ]]; then
-            echo "::error::ref '$GITHUB_REF_NAME' is not a v* version tag"
+          if [[ ! "$TAG" =~ ^v[0-9] ]]; then
+            echo "::error::release tag '$TAG' is not a v* version tag"
             exit 1
           fi
-          echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "value=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Restore
         run: dotnet restore cachew.slnx
@@ -70,8 +78,10 @@ jobs:
           name: nupkg
           path: artifacts/*.*
 
-      - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+      # release-please creates the release with the notes, so the packages are added to it rather
+      # than used to create a second one.
+      - name: Attach the packages to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg artifacts/*.snupkg --generate-notes --verify-tag
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" artifacts/*.nupkg artifacts/*.snupkg --clobber

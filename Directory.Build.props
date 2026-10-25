@@ -8,8 +8,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">0.0.2</VersionPrefix>
-    <VersionSuffix Condition="'$(VersionSuffix)' == ''">beta02</VersionSuffix>
+    <!-- A single property, because release-please rewrites one XML element. Keep it in step with
+         version.txt, which the release-please configuration updates alongside this. -->
+    <Version Condition="'$(Version)' == ''">0.0.2-beta02</Version>
   </PropertyGroup>
 
 </Project>
