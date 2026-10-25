@@ -179,7 +179,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
     }
 
     [Fact]
-    public void WithBackplane_RegistersTheRedisBackplane()
+    public void AddCachewBackplane_RegistersTheRedisBackplane()
     {
         using var provider = CreateProvider(_connection, "cachew:test-backplane-registration");
 
@@ -227,7 +227,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
         services.AddCachew();
         if (channel is not null)
         {
-            services.WithBackplane(channel);
+            services.AddCachewBackplane(channel);
         }
 
         return services.BuildServiceProvider();

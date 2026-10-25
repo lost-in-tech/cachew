@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 using Testcontainers.Redis;
@@ -174,7 +175,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     public async Task AddCachewRedis_WithConnectionString_ConnectsAndCaches()
     {
         var services = new ServiceCollection();
-        services.AddCachewRedis(_connectionString, options => options.AbortOnConnectFail = true);
+        services.AddCachewRedis(_connectionString, configureConnection: options => options.AbortOnConnectFail = true);
         using var provider = services.BuildServiceProvider();
         var cache = provider.GetRequiredService<IDistributedCache>();
 
@@ -192,6 +193,34 @@ public sealed class RedisDistributedCacheIntegrationTests
         await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("cachew:sync-persistent")));
 
         Assert.Equal(-1, (long)_database.Execute("PTTL", "cachew:sync-persistent"));
+    }
+
+    [Fact]
+    public async Task AddCachewRedis_WithConnectionStringFactory_AppliesBothCallbacks()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:redis"] = _connectionString })
+            .Build();
+        services.AddSingleton<IConfiguration>(configuration);
+
+        services.AddCachewRedis(
+            config => config.GetConnectionString("redis"),
+            options => options.KeyPrefix = "cachew:factory:",
+            configureConnection: options => options.AllowAdmin = true);
+
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<ICachew>();
+        const string key = "factory";
+
+        // CLIENT is admin only, and admin came from the connection callback, so this throws unless the
+        // callback reached the parsed connection options.
+        provider.GetRequiredService<IConnectionMultiplexer>().GetDatabase().Execute("CLIENT", "GETNAME");
+
+        await cache.SetAsync(key, "value");
+
+        Assert.Equal("value", await cache.GetAsync<string>(key));
+        await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("cachew:factory:" + key)));
     }
 
     [Fact]

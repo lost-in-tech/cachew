@@ -10,6 +10,9 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Cachew.Package.Smoke</RootNamespace>
     <IsPackable>false</IsPackable>
+    <!-- NuGet caches by id and version, so a copy of the same version in the global cache would be
+         reused instead of the freshly packed one. Keep this project's copy beside it. -->
+    <RestorePackagesPath>$(MSBuildThisFileDirectory)obj/packages</RestorePackagesPath>
   </PropertyGroup>
 
   <ItemGroup>

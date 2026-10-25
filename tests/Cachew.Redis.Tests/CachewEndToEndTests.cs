@@ -19,12 +19,14 @@ public sealed class CachewEndToEndTests
     private readonly IConnectionMultiplexer _connection;
     private readonly IConnectionMultiplexer _secondConnection;
     private readonly IDatabase _database;
+    private readonly string _connectionString;
 
     public CachewEndToEndTests(RedisFixture fixture)
     {
         _connection = fixture.Connection;
         _secondConnection = fixture.SecondConnection;
         _database = fixture.Connection.GetDatabase();
+        _connectionString = fixture.ConnectionString;
     }
 
     [Fact]
@@ -40,6 +42,49 @@ public sealed class CachewEndToEndTests
         Assert.Equal("value", await cache.GetAsync<string>(key));
         Assert.True(memory.TryGetValue(Prefixed(key), out _));
         await TestWait.Eventually(() => Task.FromResult(_database.KeyExists(Prefixed(key))));
+    }
+
+    [Fact]
+    public async Task OneAddCachewRedisCall_IsEnoughForBothLayers()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(_connection);
+
+        // Deliberately no AddCachew: registering the Redis layer registers the cache over it.
+        services.AddCachewRedis();
+
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<ICachew>();
+        var memory = provider.GetRequiredService<IMemoryCache>();
+        const string key = "e2e-one-call";
+
+        await cache.SetAsync(key, "value");
+
+        Assert.Equal("value", await cache.GetAsync<string>(key));
+        Assert.True(memory.TryGetValue(Prefixed(key), out _));
+        await TestWait.Eventually(() => Task.FromResult(_database.KeyExists(Prefixed(key))));
+    }
+
+    [Fact]
+    public async Task SettingsOnTheRedisCall_TakeEffectEndToEnd()
+    {
+        // The connection string overload, as a consumer would write it. It opens its own connection,
+        // which the container owns, so this does not disturb the connection the fixture shares.
+        var services = new ServiceCollection();
+        services.AddCachewRedis(_connectionString, options =>
+        {
+            options.KeyPrefix = "e2e-settings:";
+            options.DefaultInMemoryTimeToLive = TimeSpan.FromSeconds(30);
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<ICachew>();
+        const string key = "settings";
+
+        await cache.SetAsync(key, "value");
+
+        Assert.Equal("value", await cache.GetAsync<string>(key));
+        await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("e2e-settings:" + key)));
     }
 
     [Fact]

@@ -6,7 +6,7 @@ namespace Cachew;
 /// </summary>
 /// <remarks>
 /// This is deliberately not registered in the container. Registrations here use <c>TryAdd</c>, so a
-/// no-op added by <c>AddCachew</c> would win over a later <c>WithBackplane</c> call and silently
+/// no-op added by <c>AddCachew</c> would win over a later <c>AddCachewBackplane</c> call and silently
 /// disable cross instance invalidation. Falling back to it from the constructor has the same effect
 /// on the cache code with none of that risk.
 /// </remarks>

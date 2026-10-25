@@ -44,10 +44,10 @@ library on nuget.org. The namespaces are still `Cachew` and `Cachew.Redis`. Both
 
 ## Getting started
 
-Register a distributed cache first, then the cache in front of it. Both packages are needed for this,
-and it works with any DI container even though the shape below is ASP.NET Core. In a console app rather
-than ASP.NET Core, add `Microsoft.Extensions.DependencyInjection` and `Microsoft.Extensions.Logging`
-yourself, because ASP.NET Core brings them:
+One call is enough for Redis, and it works with any DI container even though the shape below is
+ASP.NET Core. In a console app rather than ASP.NET Core, add
+`Microsoft.Extensions.DependencyInjection` and `Microsoft.Extensions.Logging` yourself, because ASP.NET
+Core brings them:
 
 ```csharp
 using Cachew;
@@ -55,8 +55,12 @@ using Cachew.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddCachewRedis("localhost:6379"); // the distributed layer
-builder.Services.AddCachew();                      // memory in front of it
+builder.Services.AddCachewRedis("localhost:6379", options =>
+{
+    options.KeyPrefix = "myapp:";
+    options.DefaultInMemoryTimeToLive = TimeSpan.FromMinutes(1);
+    options.DefaultDistributedTimeToLive = TimeSpan.FromMinutes(10);
+});
 
 var app = builder.Build();
 
@@ -67,10 +71,16 @@ app.MapGet("/products/{id:int}", async (int id, ICachew cache, CancellationToken
         cancellationToken: ct));
 ```
 
+`AddCachewRedis` registers the Redis layer and the cache over it, taking the same options callback as
+`AddCachew`. To use a distributed cache other than Redis, register it yourself and call `AddCachew`:
+
+```csharp
+builder.Services.AddDistributedMemoryCache(); // single process. Any IDistributedCache will do.
+builder.Services.AddCachew(options => options.KeyPrefix = "myapp:");
+```
+
 `AddCachew` registers the memory layer itself. It does not register a distributed cache, so resolving
-`ICachew` without one fails with a message naming `IDistributedCache`. For a single process,
-`builder.Services.AddDistributedMemoryCache()` is a stand-in, and for Redis
-`builder.Services.AddCachewRedis(...)` is the one to use.
+`ICachew` without one fails with a message naming `IDistributedCache`.
 
 Your own data access replaces `LoadProduct`:
 
@@ -201,10 +211,8 @@ others until their copies expire, which is up to their in-memory time to live, o
 every other instance drops its own copy straight away.
 
 ```csharp
-builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
-builder.Services.AddCachewRedis();   // uses the registered multiplexer
-builder.Services.AddCachew();
-builder.Services.WithBackplane();    // optional: enable cross instance invalidation
+builder.Services.AddCachewRedis("localhost:6379"); // the cache, over Redis
+builder.Services.AddCachewBackplane();             // optional: enable cross instance invalidation
 ```
 
 Notifications are published when a value is cached and when a key is removed, because both change what
@@ -221,7 +229,7 @@ nothing. They are best effort, on the same terms as everything else here:
   again, so an invalidation can extend staleness rather than end it. Same bound: the in-memory time to
   live.
 - Evicting a key that is not there does nothing, so sharing a channel with an unrelated application is
-  harmless. Instances that must see each other have to pass the same `channel` to `WithBackplane`.
+  harmless. Instances that must see each other have to pass the same `channel` to `AddCachewBackplane`.
 
 If none of that is good enough for particular data, keep `DefaultInMemoryTimeToLive` short for values
 that change often, or bypass the in-memory layer for a key by passing
@@ -284,28 +292,42 @@ be reused across keys, since configuring it does not consume it.
 returns, and the caller does not wait for the write round trip.
 
 ```csharp
-builder.Services.AddCachewRedis("localhost:6379");
-builder.Services.AddCachew(o => { /* ... */ });
+builder.Services.AddCachewRedis("localhost:6379");            // the cache over Redis
+builder.Services.AddCachewRedis("localhost:6379", options =>  // with settings
+    options.DefaultDistributedTimeToLive = TimeSpan.FromHours(1));
 ```
 
-`AddCachewRedis` registers the `IDistributedCache` with `TryAdd`, so a cache you register yourself
-(for example `AddStackExchangeRedisCache`) wins if registered first. The connection can be supplied
-in four ways:
+`AddCachewRedis` registers the cache and the `IDistributedCache` behind it with `TryAdd`, so a cache
+you register yourself (for example `AddStackExchangeRedisCache`) wins if registered first. The
+connection can be supplied in four ways, and every one of them takes the same options callback as
+`AddCachew` except the parameterless one:
 
 ```csharp
 builder.Services.AddCachewRedis();                                        // ConnectionStrings:Cachew
 builder.Services.AddCachewRedis("localhost:6379");                        // connection string
 builder.Services.AddCachewRedis(cfg => cfg.GetConnectionString("redis")); // from configuration
-builder.Services.AddCachewRedis(sp => myConnection);                      // share a connection
+builder.Services.AddCachewRedis(sp => MyConnection());                    // built by you
 ```
 
 The parameterless overload reads `ConnectionStrings:Cachew` (see
 `ServiceCollectionExtensions.DefaultConnectionStringName`); an `IConnectionMultiplexer` that is
-already registered is used instead. The configuration overload is given the `IConfiguration` from
-the container, so the connection string can be read from any section. `WithBackplane` adds cross
-instance invalidation over the same connection; see
-[Invalidation across instances](#invalidation-across-instances). The multiplexer is registered
-as a singleton with `TryAdd`, so the first registration wins.
+already registered is used instead, and if you need settings with it, the configuration overload takes
+them. The configuration overload is given the `IConfiguration` from the container, so the connection
+string can be read from any section. `AddCachewBackplane` adds cross instance invalidation over the
+same connection; see [Invalidation across instances](#invalidation-across-instances).
+
+Who owns the connection matters:
+
+- The connection string overloads and the factory overload make the container the owner, so the
+  connection is disposed with it. The string overloads also take an optional `configureConnection`
+  callback for tuning the connection string cannot express.
+- To share a connection that something else owns, register the instance yourself. The container leaves
+  it alone, and `AddCachewRedis` uses it:
+
+```csharp
+builder.Services.AddSingleton(myConnection);
+builder.Services.AddCachewRedis();
+```
 
 Write semantics:
 
@@ -386,7 +408,7 @@ dotnet run --project tests/Cachew.Package.Smoke --configuration Release
 ```
 
 That needs a Redis. CI runs the same two commands, on a clean machine. If you repack a version you have
-already restored, clear it from your NuGet cache first, because NuGet caches by id and version.
+already restored, remove `tests/Cachew.Package.Smoke/obj` first, because NuGet caches by id and version.
 
 ## Releasing
 

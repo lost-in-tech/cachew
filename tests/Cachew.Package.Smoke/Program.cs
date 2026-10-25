@@ -98,8 +98,7 @@ void Check(bool ok, string what)
 {
     var services = new ServiceCollection();
     services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
-    services.AddCachewRedis(redis);
-    services.AddCachew(o => o.KeyPrefix = "smoke:");
+    services.AddCachewRedis(redis, options => options.KeyPrefix = "smoke:");
 
     await using var provider = services.BuildServiceProvider();
     var cache = provider.GetRequiredService<ICachew>();
@@ -129,8 +128,7 @@ void Check(bool ok, string what)
     var services = new ServiceCollection();
     services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
     services.AddCachewRedis(redis);
-    services.AddCachew();
-    services.WithBackplane();
+    services.AddCachewBackplane();
 
     await using var provider = services.BuildServiceProvider();
     var cache = provider.GetRequiredService<ICachew>();

@@ -8,12 +8,14 @@ using StackExchange.Redis;
 
 namespace Cachew.Redis;
 
-/// <summary>Registration helpers for <see cref="RedisDistributedCache"/>.</summary>
+/// <summary>Registration helpers for a cache over Redis.</summary>
 /// <remarks>
-/// Every registration uses <c>TryAdd</c>, so an <see cref="IDistributedCache"/> or
-/// <see cref="IConnectionMultiplexer"/> that is already registered is left as it is. Call this
-/// before another provider that also uses <c>TryAdd</c>, such as <c>AddStackExchangeRedisCache</c>,
-/// if you want this cache to be the one that is used.
+/// One call is enough: a Redis backed <see cref="IDistributedCache"/> is registered, and the cache over
+/// it, so <c>AddCachew</c> does not have to be called as well. Every registration uses <c>TryAdd</c>, so
+/// an <see cref="IDistributedCache"/>, an <see cref="IConnectionMultiplexer"/> or an
+/// <see cref="ICachewBackplane"/> that is already registered is left as it is. Call this before another
+/// provider that also uses <c>TryAdd</c>, such as <c>AddStackExchangeRedisCache</c>, if you want this
+/// cache to be the one that is used.
 /// </remarks>
 public static class ServiceCollectionExtensions
 {
@@ -24,10 +26,9 @@ public static class ServiceCollectionExtensions
     public const string DefaultConnectionStringName = "Cachew";
 
     /// <summary>
-    /// Registers a Redis backed <see cref="IDistributedCache"/> using the
-    /// <c>ConnectionStrings:Cachew</c> entry from the <see cref="IConfiguration"/> registered in the
-    /// container. An <see cref="IConnectionMultiplexer"/> that is already registered is used
-    /// instead.
+    /// Registers the cache over Redis, using the <c>ConnectionStrings:Cachew</c> entry from the
+    /// <see cref="IConfiguration"/> registered in the container. An
+    /// <see cref="IConnectionMultiplexer"/> that is already registered is used instead.
     /// </summary>
     /// <param name="services">The service collection.</param>
     public static IServiceCollection AddCachewRedis(this IServiceCollection services)
@@ -36,56 +37,90 @@ public static class ServiceCollectionExtensions
 
         AddConnectionMultiplexer(services, provider =>
             provider.GetRequiredService<IConfiguration>().GetConnectionString(DefaultConnectionStringName));
-        return AddDistributedCache(services);
+        return AddRedisBackedCache(services, configure: null);
     }
 
     /// <summary>
-    /// Registers a Redis backed <see cref="IDistributedCache"/> from a connection string. The
-    /// connection is opened lazily on first use.
+    /// Registers the cache over Redis, using the given connection string. The connection is opened
+    /// lazily on first use.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="connectionString">A StackExchange.Redis connection string.</param>
-    /// <param name="configure">Optional callback to adjust the parsed connection options.</param>
-    public static IServiceCollection AddCachewRedis(this IServiceCollection services, string connectionString, Action<ConfigurationOptions>? configure = null)
+    /// <param name="configure">
+    /// Optional callback to set the cache options, the same ones <see cref="CachewOptions"/> exposes.
+    /// </param>
+    /// <param name="configureConnection">
+    /// Optional callback to adjust the parsed connection options. Tuning that the connection string
+    /// cannot express, such as a reconnect retry policy, can also be done by registering a multiplexer
+    /// yourself and using the overload that takes one.
+    /// </param>
+    public static IServiceCollection AddCachewRedis(
+        this IServiceCollection services,
+        string connectionString,
+        Action<CachewOptions>? configure = null,
+        Action<ConfigurationOptions>? configureConnection = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrEmpty(connectionString);
 
-        AddConnectionMultiplexer(services, _ => connectionString, configure);
-        return AddDistributedCache(services);
+        AddConnectionMultiplexer(services, _ => connectionString, configureConnection);
+        return AddRedisBackedCache(services, configure);
     }
 
     /// <summary>
-    /// Registers a Redis backed <see cref="IDistributedCache"/> from a connection string produced by
+    /// Registers the cache over Redis, using a connection string produced by
     /// <paramref name="connectionStringFactory"/>, which receives the <see cref="IConfiguration"/>
     /// registered in the container. Use this to read the connection string from wherever it lives.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="connectionStringFactory">Reads the connection string from configuration.</param>
-    /// <param name="configure">Optional callback to adjust the parsed connection options.</param>
-    public static IServiceCollection AddCachewRedis(this IServiceCollection services, Func<IConfiguration, string?> connectionStringFactory, Action<ConfigurationOptions>? configure = null)
+    /// <param name="configure">
+    /// Optional callback to set the cache options, the same ones <see cref="CachewOptions"/> exposes.
+    /// </param>
+    /// <param name="configureConnection">
+    /// Optional callback to adjust the parsed connection options. Tuning that the connection string
+    /// cannot express, such as a reconnect retry policy, can also be done by registering a multiplexer
+    /// yourself and using the overload that takes one.
+    /// </param>
+    public static IServiceCollection AddCachewRedis(
+        this IServiceCollection services,
+        Func<IConfiguration, string?> connectionStringFactory,
+        Action<CachewOptions>? configure = null,
+        Action<ConfigurationOptions>? configureConnection = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(connectionStringFactory);
 
-        AddConnectionMultiplexer(services, provider => connectionStringFactory(provider.GetRequiredService<IConfiguration>()), configure);
-        return AddDistributedCache(services);
+        AddConnectionMultiplexer(services, provider => connectionStringFactory(provider.GetRequiredService<IConfiguration>()), configureConnection);
+        return AddRedisBackedCache(services, configure);
     }
 
     /// <summary>
-    /// Registers a Redis backed <see cref="IDistributedCache"/> using a multiplexer produced by
-    /// <paramref name="connectionFactory"/>. Use this to share a connection that is created or
-    /// owned elsewhere.
+    /// Registers the cache over Redis, using a multiplexer produced by
+    /// <paramref name="connectionFactory"/>. Use this to build the connection yourself, with tuning that
+    /// the connection string cannot express.
     /// </summary>
+    /// <remarks>
+    /// The container owns what the factory returns and disposes it, so to share a connection that
+    /// something else owns, register the instance yourself and call an overload that does not take a
+    /// factory: an <see cref="IConnectionMultiplexer"/> that is already registered is used as it is and
+    /// is left alone.
+    /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <param name="connectionFactory">A factory that resolves the connection multiplexer.</param>
-    public static IServiceCollection AddCachewRedis(this IServiceCollection services, Func<IServiceProvider, IConnectionMultiplexer> connectionFactory)
+    /// <param name="configure">
+    /// Optional callback to set the cache options, the same ones <see cref="CachewOptions"/> exposes.
+    /// </param>
+    public static IServiceCollection AddCachewRedis(
+        this IServiceCollection services,
+        Func<IServiceProvider, IConnectionMultiplexer> connectionFactory,
+        Action<CachewOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(connectionFactory);
 
         services.TryAddSingleton(connectionFactory);
-        return AddDistributedCache(services);
+        return AddRedisBackedCache(services, configure);
     }
 
     /// <summary>
@@ -95,13 +130,13 @@ public static class ServiceCollectionExtensions
     /// <remarks>
     /// Notifications are best effort: an instance that misses one stays stale until its entry
     /// expires. Requires an <see cref="IConnectionMultiplexer"/>, which
-    /// <see cref="AddCachewRedis(IServiceCollection, string, Action{ConfigurationOptions}?)"/> and the
-    /// other <c>AddCachewRedis</c> overloads register. A backplane that is already registered is kept,
-    /// so a custom <see cref="ICachewBackplane"/> wins.
+    /// <see cref="AddCachewRedis(IServiceCollection, string, Action{CachewOptions}?, Action{ConfigurationOptions}?)"/>
+    /// and the other <c>AddCachewRedis</c> overloads register. A backplane that is already registered is
+    /// kept, so a custom <see cref="ICachewBackplane"/> wins.
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <param name="channel">The pub/sub channel every instance must agree on.</param>
-    public static IServiceCollection WithBackplane(this IServiceCollection services, string channel = RedisCacheBackplane.DefaultChannel)
+    public static IServiceCollection AddCachewBackplane(this IServiceCollection services, string channel = RedisCacheBackplane.DefaultChannel)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrEmpty(channel);
@@ -115,10 +150,17 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    private static IServiceCollection AddDistributedCache(IServiceCollection services)
+    /// <summary>
+    /// Registers the Redis layer and the cache over it, which is why one <c>AddCachewRedis</c> call is
+    /// enough. <c>AddCachew</c> uses <c>TryAdd</c> throughout, so calling it as well, to configure
+    /// options or to register the cache yourself, still works.
+    /// </summary>
+    private static IServiceCollection AddRedisBackedCache(IServiceCollection services, Action<CachewOptions>? configure)
     {
         services.AddOptions<RedisCachewOptions>();
         services.TryAddSingleton<IDistributedCache, RedisDistributedCache>();
+        services.AddCachew(configure);
+
         return services;
     }
 
