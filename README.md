@@ -377,6 +377,17 @@ dotnet test cachew.slnx --configuration Release
 dotnet pack cachew.slnx --configuration Release
 ```
 
+The test suites cover the projects. To also check the packages themselves, consume them the way a
+consumer does, which is what catches a missing dependency or a missing asset:
+
+```bash
+dotnet pack cachew.slnx --configuration Release --output artifacts
+dotnet run --project tests/Cachew.Package.Smoke --configuration Release
+```
+
+That needs a Redis. CI runs the same two commands, on a clean machine. If you repack a version you have
+already restored, clear it from your NuGet cache first, because NuGet caches by id and version.
+
 ## Releasing
 
 Push a `v*` tag. The `release` workflow builds, tests, packs, publishes to NuGet.org and creates a

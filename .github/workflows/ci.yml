@@ -45,3 +45,30 @@ jobs:
           name: coverage
           path: "**/coverage.cobertura.xml"
           if-no-files-found: ignore
+
+  package-smoke:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Consumes the packed nupkgs rather than the projects, so a missing dependency, a missing asset
+      # or a bad nuspec fails here instead of after publishing.
+      - name: Pack
+        run: dotnet pack cachew.slnx --configuration Release --output artifacts
+
+      - name: Consume the packages
+        run: dotnet run --project tests/Cachew.Package.Smoke --configuration Release -- localhost:6379

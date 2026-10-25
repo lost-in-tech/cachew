@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Consumes the packed nupkgs rather than the projects, so it catches packaging faults that the test
+    suites cannot see: a missing dependency, a missing asset, a bad nuspec. It is deliberately not in
+    cachew.slnx, because it cannot restore until the packages have been packed. See the Build section
+    of the README for how to run it.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Cachew.Package.Smoke</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LostInTech.Cachew" Version="$(VersionPrefix)-$(VersionSuffix)" />
+    <PackageReference Include="LostInTech.Cachew.Redis" Version="$(VersionPrefix)-$(VersionSuffix)" />
+    <!-- A console app adds these itself, so this also checks that the library does not need to. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.13" />
+  </ItemGroup>
+
+</Project>
