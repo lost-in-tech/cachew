@@ -13,8 +13,8 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
     private readonly IDistributedCache _distributedCache;
     private readonly CachewOptions _options;
     private readonly ILogger<TwoLayerCache>? _logger;
-    private readonly ICachewBackplane? _backplane;
-    private readonly IDisposable? _subscription;
+    private readonly ICachewBackplane _backplane;
+    private readonly IDisposable _subscription;
     private readonly ConcurrentDictionary<string, Task> _inFlight = new();
 
     public TwoLayerCache(
@@ -32,15 +32,15 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
         _distributedCache = distributedCache;
         _options = options.Value;
         _logger = logger;
-        _backplane = backplane;
+        _backplane = backplane ?? NullCacheBackplane.Instance;
 
         ArgumentNullException.ThrowIfNull(_options.KeyPrefix);
         ArgumentNullException.ThrowIfNull(_options.SerializerOptions);
 
-        _subscription = backplane?.Subscribe(EvictLocal);
+        _subscription = _backplane.Subscribe(EvictLocal);
     }
 
-    public void Dispose() => _subscription?.Dispose();
+    public void Dispose() => _subscription.Dispose();
 
     public async Task<T?> GetAsync<T>(string key, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default)
     {
@@ -246,9 +246,8 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
 
     private void Publish(string cacheKey)
     {
-        // Nothing to evict anywhere when there is no backplane, or when no instance keeps an
-        // in-memory layer at all.
-        if (_backplane is null || _options.DefaultInMemoryTimeToLive <= TimeSpan.Zero)
+        // Nothing to evict anywhere when no instance keeps an in-memory layer at all.
+        if (_options.DefaultInMemoryTimeToLive <= TimeSpan.Zero)
         {
             return;
         }
