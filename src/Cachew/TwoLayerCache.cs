@@ -97,12 +97,12 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
 
         var cacheKey = BuildKey(key);
 
-        if (_options.DefaultInMemoryTimeToLive > TimeSpan.Zero)
+        if (InMemoryEnabled)
         {
             _memoryCache.Remove(cacheKey);
         }
 
-        if (_options.DefaultDistributedTimeToLive > TimeSpan.Zero)
+        if (DistributedEnabled)
         {
             try
             {
@@ -147,8 +147,8 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
 
     private async Task SetCoreAsync<T>(string cacheKey, T value, CacheEntryOptions<T>? options, CancellationToken cancellationToken)
     {
-        var inMemoryTtl = options?.InMemoryTimeToLive ?? _options.DefaultInMemoryTimeToLive;
-        var distributedTtl = options?.DistributedTimeToLive ?? _options.DefaultDistributedTimeToLive;
+        var inMemoryTtl = InMemoryTimeToLive(options);
+        var distributedTtl = DistributedTimeToLive(options);
 
         if (distributedTtl > TimeSpan.Zero)
         {
@@ -189,8 +189,8 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
 
     private async Task<(bool Found, T? Value)> TryGetAsync<T>(string cacheKey, CacheEntryOptions<T>? options, CancellationToken cancellationToken)
     {
-        var inMemoryTtl = options?.InMemoryTimeToLive ?? _options.DefaultInMemoryTimeToLive;
-        var distributedTtl = options?.DistributedTimeToLive ?? _options.DefaultDistributedTimeToLive;
+        var inMemoryTtl = InMemoryTimeToLive(options);
+        var distributedTtl = DistributedTimeToLive(options);
 
         if (inMemoryTtl > TimeSpan.Zero && _memoryCache.TryGetValue(cacheKey, out CacheEnvelope<T>? local) && local is not null)
         {
@@ -240,6 +240,18 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
         return (true, envelope.Value);
     }
 
+    // A disabled cache wins over per entry overrides: turning it off from configuration has to turn
+    // it off everywhere, not only where the defaults apply.
+    private TimeSpan InMemoryTimeToLive<T>(CacheEntryOptions<T>? options)
+        => _options.Enabled ? options?.InMemoryTimeToLive ?? _options.DefaultInMemoryTimeToLive : TimeSpan.Zero;
+
+    private TimeSpan DistributedTimeToLive<T>(CacheEntryOptions<T>? options)
+        => _options.Enabled ? options?.DistributedTimeToLive ?? _options.DefaultDistributedTimeToLive : TimeSpan.Zero;
+
+    private bool InMemoryEnabled => _options.Enabled && _options.DefaultInMemoryTimeToLive > TimeSpan.Zero;
+
+    private bool DistributedEnabled => _options.Enabled && _options.DefaultDistributedTimeToLive > TimeSpan.Zero;
+
     private string BuildKey(string key) => string.Concat(_options.KeyPrefix, key);
 
     private void EvictLocal(string cacheKey) => _memoryCache.Remove(cacheKey);
@@ -247,7 +259,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
     private void Publish(string cacheKey)
     {
         // Nothing to evict anywhere when no instance keeps an in-memory layer at all.
-        if (_options.DefaultInMemoryTimeToLive <= TimeSpan.Zero)
+        if (!InMemoryEnabled)
         {
             return;
         }

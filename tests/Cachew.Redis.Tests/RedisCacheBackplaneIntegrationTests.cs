@@ -162,6 +162,32 @@ public sealed class RedisCacheBackplaneIntegrationTests
         Assert.IsType<RedisCacheBackplane>(provider.GetRequiredService<ICachewBackplane>());
     }
 
+    [Fact]
+    public async Task ASetOnOneInstance_EvictsTheOtherMemoryLayer_ButLeavesRedisAlone()
+    {
+        const string channel = "cachew:test-backplane-set";
+        using var providerA = CreateProvider(channel);
+        using var providerB = CreateProvider(channel);
+        var cacheA = providerA.GetRequiredService<ICachew>();
+        var cacheB = providerB.GetRequiredService<ICachew>();
+        var memoryB = providerB.GetRequiredService<IMemoryCache>();
+        const string key = "set-me";
+        var cacheKey = "cachew:" + key;
+
+        // A stores a version and B reads it, so both instances hold a copy of it.
+        await cacheA.SetAsync(key, "v1");
+        await TestWait.Eventually(async () => await cacheB.GetAsync<string>(key) is "v1");
+        Assert.True(memoryB.TryGetValue(cacheKey, out _));
+
+        // A stores a second version. B has to drop its own copy, and the stored value has to survive:
+        // an invalidation evicts the in-memory copy of the instance that receives it, nothing else.
+        await cacheA.SetAsync(key, "v2");
+
+        await TestWait.Eventually(() => Task.FromResult(!memoryB.TryGetValue(cacheKey, out _)));
+        await TestWait.Eventually(async () => await cacheB.GetAsync<string>(key) is "v2");
+        Assert.True(_connection.GetDatabase().KeyExists(cacheKey));
+    }
+
     private ServiceProvider CreateProvider(string? channel)
     {
         var services = new ServiceCollection();

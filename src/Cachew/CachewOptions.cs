@@ -7,6 +7,15 @@ namespace Cachew;
 public sealed class CachewOptions
 {
     /// <summary>
+    /// Whether the cache does anything. Defaults to <c>true</c>. Set it to <c>false</c> to turn the
+    /// cache off from configuration, for example while an incident is in progress. A disabled cache
+    /// stores nothing, returns nothing, and takes no part in cross instance invalidation, but
+    /// <see cref="ICachew.GetOrCreateAsync{T}"/> still coalesces concurrent misses for a key so that a
+    /// burst makes one call to the factory.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
     /// Default in-memory time to live. Defaults to one minute. Zero or negative disables the
     /// in-memory layer.
     /// </summary>

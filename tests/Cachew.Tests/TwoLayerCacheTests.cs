@@ -709,6 +709,79 @@ public class TwoLayerCacheTests
         Assert.Empty(backplane.Published);
     }
 
+    [Fact]
+    public async Task WhenDisabled_NothingIsStoredOrReturned()
+    {
+        var options = new CachewOptions { Enabled = false };
+        var distributed = CreateDistributedCache();
+        var cache = CreateCache(distributed, options, out var memory);
+        var cacheKey = DefaultOptions.KeyPrefix + "key";
+
+        await cache.SetAsync("key", "value");
+
+        Assert.Null(await cache.GetAsync<string>("key"));
+        Assert.Null(await distributed.GetAsync(cacheKey));
+        Assert.False(memory.TryGetValue(cacheKey, out _));
+    }
+
+    [Fact]
+    public async Task WhenDisabled_APerEntryOverrideDoesNotEnableCaching()
+    {
+        var options = new CachewOptions { Enabled = false };
+        var distributed = CreateDistributedCache();
+        var cache = CreateCache(distributed, options, out _);
+
+        await cache.SetAsync("key", "value", new CacheEntryOptions<string>
+        {
+            InMemoryTimeToLive = TimeSpan.FromMinutes(1),
+            DistributedTimeToLive = TimeSpan.FromMinutes(1),
+        });
+
+        Assert.Null(await cache.GetAsync<string>("key"));
+    }
+
+    [Fact]
+    public async Task WhenDisabled_GetOrCreateAsyncCallsTheFactoryEveryTime()
+    {
+        var options = new CachewOptions { Enabled = false };
+        var cache = CreateCache(CreateDistributedCache(), options, out _);
+        var calls = 0;
+
+        await cache.GetOrCreateAsync("key", _ => Task.FromResult(++calls));
+        await cache.GetOrCreateAsync("key", _ => Task.FromResult(++calls));
+
+        Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public async Task WhenDisabled_NothingIsPublishedToTheBackplane()
+    {
+        var backplane = new FakeBackplane();
+        var options = new CachewOptions { Enabled = false };
+        var cache = new TwoLayerCache(
+            new MemoryCache(new MemoryCacheOptions()),
+            CreateDistributedCache(),
+            Options.Create(options),
+            backplane: backplane);
+
+        await cache.SetAsync("key", "value");
+        await cache.RemoveAsync("key");
+
+        Assert.Empty(backplane.Published);
+    }
+
+    [Fact]
+    public void CacheIsEnabledByDefault()
+    {
+        Assert.True(new CachewOptions().Enabled);
+    }
+
+    private static ICachew CreateCache(IDistributedCache distributed, CachewOptions options, out IMemoryCache memory)
+    {
+        memory = new MemoryCache(new MemoryCacheOptions());
+        return new TwoLayerCache(memory, distributed, Options.Create(options));
+    }
+
     private static ICachew CreateCache(IDistributedCache distributed, ICachewBackplane backplane, out IMemoryCache memory, CachewOptions? options = null)
     {
         memory = new MemoryCache(new MemoryCacheOptions());

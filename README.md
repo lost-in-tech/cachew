@@ -88,6 +88,34 @@ into memory expires after the effective in-memory time to live.
 `KeyPrefix` or `SerializerOptions` fails at construction rather than silently misbehaving. Options
 are read once at startup, so changing them at runtime has no effect.
 
+## Turning the cache off
+
+`CachewOptions.Enabled` defaults to `true`. Setting it to `false` turns the cache off: nothing is
+stored, nothing is returned, and the instance takes no part in cross instance invalidation. Concurrent
+misses for a key are still coalesced, so a burst makes one call to the factory, which is the case where
+that matters most. It wins over per entry overrides, so an `InMemoryTimeToLive` on an entry cannot
+re-enable caching that the configuration turned off.
+
+Because the options bind from configuration, an operator can turn the cache off without a deployment:
+
+```csharp
+builder.Services.Configure<CachewOptions>(builder.Configuration.GetSection("Cachew"));
+builder.Services.AddCachew();
+```
+
+```json
+{
+  "Cachew": {
+    "Enabled": false,
+    "KeyPrefix": "myapp:",
+    "DefaultInMemoryTimeToLive": "00:01:00",
+    "DefaultDistributedTimeToLive": "00:10:00"
+  }
+}
+```
+
+It is read at startup, so it needs a restart to take effect.
+
 ## Distributed layer failures
 
 The distributed layer is best effort. If it throws, a read behaves as a miss and a write or a
