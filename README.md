@@ -12,14 +12,17 @@ Early. The API is a first pass and may change.
 ## Install
 
 ```bash
-dotnet add package Cachew
+dotnet add package LostInTech.Cachew
 ```
 
 For the Redis provider:
 
 ```bash
-dotnet add package Cachew.Redis
+dotnet add package LostInTech.Cachew.Redis
 ```
+
+The package IDs carry the `LostInTech` prefix because the ID `Cachew` belongs to an unrelated
+library on nuget.org. The namespaces are still `Cachew` and `Cachew.Redis`.
 
 ## Usage
 

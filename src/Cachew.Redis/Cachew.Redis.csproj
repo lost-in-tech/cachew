@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <RootNamespace>Cachew.Redis</RootNamespace>
-    <PackageId>Cachew.Redis</PackageId>
+    <PackageId>LostInTech.Cachew.Redis</PackageId>
     <Description>Redis IDistributedCache for Cachew. Writes are sent fire-and-forget.</Description>
     <PackageTags>cache;caching;distributed;redis;cachew</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
