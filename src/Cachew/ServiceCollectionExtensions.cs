@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Cachew;
 
@@ -20,6 +22,13 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddMemoryCache();
+
+        // Applied after any configuration of MemoryCacheOptions, and only when that has not set a
+        // limit, so a limit the consumer configures themselves always wins whatever the order.
+        services.AddOptions<MemoryCacheOptions>()
+            .PostConfigure<IOptions<CachewOptions>>((memoryCache, cachew) =>
+                memoryCache.SizeLimit ??= cachew.Value.MemoryCacheSizeLimit);
+
         services.AddOptions<CachewOptions>();
         if (configure is not null)
         {

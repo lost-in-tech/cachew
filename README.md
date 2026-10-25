@@ -83,21 +83,25 @@ but not cached. Pass the same `CacheEntryOptions<T>` to `GetAsync`, `SetAsync` a
 `GetOrCreateAsync` to keep a key's policy consistent; a value promoted from the distributed layer
 into memory expires after the effective in-memory time to live.
 
-`AddCachew` registers the memory layer for you and does not bound it. A null `KeyPrefix` or
-`SerializerOptions` fails at construction rather than silently misbehaving, and options are read once at
-startup, so changing them at runtime has no effect.
+`AddCachew` registers the memory layer for you. It is bounded by default: `CachewOptions.MemoryCacheSizeLimit`
+defaults to 10,000 entries, and entries are sized as one, so the limit counts entries rather than bytes.
+Set it to `null` for no limit, in which case memory grows with the time to live times arrival rate.
 
-To bound it, set `MemoryCacheOptions.SizeLimit`. You do not need to call `AddMemoryCache` again, and the
-order does not matter, because the options are read when the cache is resolved:
+```csharp
+builder.Services.AddCachew(options => options.MemoryCacheSizeLimit = 50_000);
+```
+
+A limit configured directly on `MemoryCacheOptions` wins over that one, whatever order it is registered
+in, because the cache's own configuration is applied after the default:
 
 ```csharp
 builder.Services.AddCachew();
-builder.Services.Configure<MemoryCacheOptions>(options => options.SizeLimit = 10_000);
+builder.Services.Configure<MemoryCacheOptions>(options => options.SizeLimit = 50_000);
 ```
 
-Entries are sized as one, so the limit counts entries and the cache can evict to stay under it. Without
-a limit, memory grows with time to live times arrival rate, so a time to live set longer than intended
-becomes a memory problem rather than a slow cache.
+Either way the cache can evict to stay under the limit, so a limit trades hit rate for memory safety. A
+null `KeyPrefix` or `SerializerOptions` fails at construction rather than silently misbehaving, and
+options are read once at startup, so changing them at runtime has no effect.
 
 ## Turning the cache off
 

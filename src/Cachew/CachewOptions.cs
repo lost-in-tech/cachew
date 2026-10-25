@@ -16,6 +16,14 @@ public sealed class CachewOptions
     public bool Enabled { get; set; } = true;
 
     /// <summary>
+    /// Maximum number of entries the in-memory layer keeps, defaulting to 10,000. Entries are sized as
+    /// one, so this counts entries rather than bytes. Set it to <c>null</c> for no limit, in which case
+    /// memory grows with the time to live times the arrival rate. A limit configured directly on
+    /// <c>MemoryCacheOptions</c> wins over this one.
+    /// </summary>
+    public long? MemoryCacheSizeLimit { get; set; } = 10_000;
+
+    /// <summary>
     /// Default in-memory time to live. Defaults to one minute. Zero or negative disables the
     /// in-memory layer.
     /// </summary>
