@@ -7,6 +7,12 @@ using StackExchange.Redis;
 namespace Cachew.Redis;
 
 /// <summary>Registration helpers for <see cref="RedisDistributedCache"/>.</summary>
+/// <remarks>
+/// Every registration uses <c>TryAdd</c>, so an <see cref="IDistributedCache"/> or
+/// <see cref="IConnectionMultiplexer"/> that is already registered is left as it is. Call this
+/// before another provider that also uses <c>TryAdd</c>, such as <c>AddStackExchangeRedisCache</c>,
+/// if you want this cache to be the one that is used.
+/// </remarks>
 public static class ServiceCollectionExtensions
 {
     /// <summary>

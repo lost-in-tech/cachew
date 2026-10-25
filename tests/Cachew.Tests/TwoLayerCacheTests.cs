@@ -456,6 +456,32 @@ public class TwoLayerCacheTests
         Assert.False(memory.TryGetValue(options.KeyPrefix + "key", out _));
     }
 
+    [Fact]
+    public async Task GetOrCreateAsync_ReturnsACachedNull_WithoutInvokingTheFactory()
+    {
+        var distributed = CreateDistributedCache();
+        var writer = CreateCache(distributed);
+
+        // A separate reader so its memory layer is empty and the null has to come back from the
+        // distributed layer.
+        var reader = CreateCache(distributed);
+        await writer.SetAsync<string?>("key", null);
+
+        var calls = 0;
+
+        Task<string?> Factory(CancellationToken _)
+        {
+            calls++;
+            return Task.FromResult<string?>("produced");
+        }
+
+        var value = await reader.GetOrCreateAsync("key", Factory);
+
+        // A cached null is a hit, so this is negative caching and the factory does not run again.
+        Assert.Null(value);
+        Assert.Equal(0, calls);
+    }
+
     private static ICachew CreateCache(IDistributedCache distributed)
         => new TwoLayerCache(new MemoryCache(new MemoryCacheOptions()), distributed, Options.Create(DefaultOptions));
 

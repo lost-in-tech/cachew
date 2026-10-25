@@ -99,6 +99,19 @@ that cannot be serialized still throws.
 Because remove degrades as well, invalidation is best effort: if the remove fails, other processes
 can serve a stale value until it expires.
 
+## Invalidation across instances
+
+`RemoveAsync` clears the in-memory layer of the instance that calls it, and the shared distributed
+layer. It does not tell the other instances anything, so each of them keeps serving its own
+in-memory copy until it expires, which is up to that instance's in-memory time to live, one minute
+by default. Only those local copies lag; the distributed layer is correct as soon as the call
+returns.
+
+There is no pub/sub invalidation. To narrow the window, keep `DefaultInMemoryTimeToLive` short for
+values that change often, or bypass the in-memory layer for a key by passing
+`InMemoryTimeToLive = TimeSpan.Zero` on both the write and the read, so every read goes to the
+distributed layer.
+
 ## Evolving cached values
 
 The library does not version your payloads, you do, in the key:
