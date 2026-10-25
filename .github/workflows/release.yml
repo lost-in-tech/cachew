@@ -1,12 +1,20 @@
 name: release
 
+# Release Please derives the next version from the conventional commits on main and opens a release
+# pull request. Merging it creates the tag and the GitHub release, and this same run then publishes.
+#
+# Publishing lives here rather than in a workflow triggered by the tag, because a tag created with
+# the default GITHUB_TOKEN does not start a workflow run. Keeping both in one run means the default
+# token is enough and no personal access token has to be stored.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write # gh release create
+  contents: write # create the tag and the GitHub release, attach the packages
+  issues: write # label the release pull request
+  pull-requests: write # open and update the release pull request
   id-token: write # OIDC token for NuGet trusted publishing
 
 env:
@@ -14,10 +22,27 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
 
 jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
   publish:
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
+      # The run is triggered by a push to main; the release points at a tag.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -32,14 +57,16 @@ jobs:
             exit 1
           fi
 
-      - name: Resolve version from tag
+      - name: Resolve version from the release tag
         id: version
+        env:
+          TAG: ${{ needs.release-please.outputs.tag }}
         run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9] ]]; then
-            echo "::error::ref '$GITHUB_REF_NAME' is not a v* version tag"
+          if [[ ! "$TAG" =~ ^v[0-9] ]]; then
+            echo "::error::release tag '$TAG' is not a v* version tag"
             exit 1
           fi
-          echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "value=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Restore
         run: dotnet restore cachew.slnx
@@ -70,8 +97,10 @@ jobs:
           name: nupkg
           path: artifacts/*.*
 
-      - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Release Please creates the release with the notes, so the packages are added to it rather
+      # than used to create a second one.
+      - name: Attach the packages to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg artifacts/*.snupkg --generate-notes --verify-tag
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: gh release upload "$TAG" artifacts/*.nupkg artifacts/*.snupkg --clobber

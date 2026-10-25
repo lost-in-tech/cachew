@@ -16,8 +16,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="LostInTech.Cachew" Version="$(VersionPrefix)-$(VersionSuffix)" />
-    <PackageReference Include="LostInTech.Cachew.Redis" Version="$(VersionPrefix)-$(VersionSuffix)" />
+    <PackageReference Include="LostInTech.Cachew" Version="$(Version)" />
+    <PackageReference Include="LostInTech.Cachew.Redis" Version="$(Version)" />
     <!-- A console app adds these itself, so this also checks that the library does not need to. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.13" />
