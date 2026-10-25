@@ -2,12 +2,29 @@
 
 Two layer caching for .NET: an in-memory layer in front of a distributed layer.
 
-Reads hit memory first and fall back to the distributed layer, repopulating memory. Writes populate
-both layers.
+## How it works
+
+A read walks three steps, cheapest first:
+
+1. **Memory.** Held in this process, so nothing goes over the network.
+2. **Distributed.** One hop to Redis. A hit here is also copied into memory, and that copy is capped at
+   whatever is left of the distributed entry, so it can never outlive the entry it came from.
+3. **Your factory.** Only on a miss. The value it returns is written to both layers.
+
+```text
+get(key)
+  memory has it?    -> return it
+  distributed has it? -> copy to memory, return it
+  neither?          -> run your factory, write both layers, return it
+```
+
+Writes fill both layers, removes clear both, and concurrent misses for one key are coalesced so a burst
+of callers runs the factory once.
 
 ## Status
 
-Early. The API is a first pass and may change.
+Pre 1.0, so the API may still change. Everything described here is covered by tests, including against
+a real Redis, and the same tests run on every push.
 
 ## Install
 
@@ -22,47 +39,80 @@ dotnet add package LostInTech.Cachew.Redis
 ```
 
 The package IDs carry the `LostInTech` prefix because the ID `Cachew` belongs to an unrelated
-library on nuget.org. The namespaces are still `Cachew` and `Cachew.Redis`.
+library on nuget.org. The namespaces are still `Cachew` and `Cachew.Redis`. Both packages target
+.NET 10.
 
-## Usage
+## Getting started
+
+Register a distributed cache first, then the cache in front of it. Both packages are needed for this,
+and it works with any DI container even though the shape below is ASP.NET Core:
 
 ```csharp
 using Cachew;
+using Cachew.Redis;
 
-builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "localhost:6379");
-builder.Services.AddCachew(o =>
-{
-    o.KeyPrefix = "myapp:";
-    o.DefaultInMemoryTimeToLive = TimeSpan.FromMinutes(1);
-    o.DefaultDistributedTimeToLive = TimeSpan.FromMinutes(10);
-});
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddCachewRedis("localhost:6379"); // the distributed layer
+builder.Services.AddCachew();                      // memory in front of it
+
+var app = builder.Build();
+
+app.MapGet("/products/{id:int}", async (int id, ICachew cache, CancellationToken ct) =>
+    await cache.GetOrCreateAsync(
+        $"product:{id}",
+        token => LoadProduct(id, token),
+        cancellationToken: ct));
 ```
+
+`AddCachew` registers the memory layer itself. It does not register a distributed cache, so resolving
+`ICachew` without one fails with a message naming `IDistributedCache`. For a single process,
+`builder.Services.AddDistributedMemoryCache()` is a stand-in, and for Redis
+`builder.Services.AddCachewRedis(...)` is the one to use.
+
+Your own data access replaces `LoadProduct`:
 
 ```csharp
-public sealed class Products(ICachew cache)
-{
-    public Task<Product?> GetAsync(int id, CancellationToken ct)
-        => cache.GetOrCreateAsync(
-            $"product:{id}",
-            async token => await LoadFromDatabaseAsync(id, token),
-            new CacheEntryOptions<Product> { InMemoryTimeToLive = TimeSpan.FromSeconds(30) },
-            ct);
-}
+async Task<Product?> LoadProduct(int id, CancellationToken ct)
+    => await LoadFromDatabaseAsync(id, ct);
 ```
 
-`AddCachew` registers the memory layer and the cache itself. Register an `IDistributedCache`
-(Redis, or `MemoryDistributedCache` for a single process) yourself.
+### A first tweak
 
-`GetOrCreateAsync` coalesces concurrent misses for the same key within one process, so a burst of
-callers runs the factory once. It does not coalesce across processes. The group shares the first
-caller's `CacheEntryOptions<T>`, so concurrent calls for one key should agree on the policy. The
-factory and the write are not run under any single caller's token: a caller that cancels stops
-waiting, but the work it started carries on for the others and still populates the cache.
+Every setting has a per call override, and `GetOrCreateAsync` coalesces concurrent misses for the same
+key within a process, so a burst of callers runs the factory once. It does not coalesce across
+processes. The group shares the first caller's `CacheEntryOptions<T>`, so concurrent calls for one key
+should agree on the policy. The factory and the write are not run under any single caller's token: a
+caller that cancels stops waiting, but the work it started carries on for the others and still
+populates the cache.
+
+```csharp
+await cache.GetOrCreateAsync(
+    $"product:{id}",
+    token => LoadProduct(id, token),
+    new CacheEntryOptions<Product>
+    {
+        InMemoryTimeToLive = TimeSpan.FromSeconds(30),
+        ShouldCache = product => product is not null,
+    },
+    ct);
+```
 
 ## Layers and lifetimes
 
 Each layer is configured by a time to live. `null` (or unset) means "use the configured default",
 and a time to live of zero or less means "do not use this layer".
+
+How to choose:
+
+- **Memory** is the cheapest hit and the shortest lived. Keep it short for data that changes, seconds to
+  a minute, because a long one means staleness across instances unless the backplane is on. The default
+  is one minute.
+- **Distributed** survives restarts and is shared by every instance, so it can be much longer. The
+  default is ten minutes.
+- Turning a layer off with zero is a legitimate configuration. A zero distributed lifetime gives a
+  memory-only cache, and a zero memory lifetime gives Redis-only, which removes cross instance staleness
+  at the cost of a network hop on every read.
 
 ```csharp
 // Application defaults. Zero here turns a layer off for the whole app.
@@ -72,9 +122,9 @@ o.DefaultDistributedTimeToLive = TimeSpan.Zero; // no distributed layer
 // Per entry overrides.
 new CacheEntryOptions<Product>
 {
-    InMemoryTimeToLive = TimeSpan.Zero,              // skip the in-memory layer for this entry
-    DistributedTimeToLive = TimeSpan.FromMinutes(10),   // override the distributed lifetime
-    ShouldCache = product => product is not null, // cache only when this returns true
+    InMemoryTimeToLive = TimeSpan.Zero,                // skip the in-memory layer for this entry
+    DistributedTimeToLive = TimeSpan.FromMinutes(10),  // override the distributed lifetime
+    ShouldCache = product => product is not null,      // cache only when this returns true
 }
 ```
 
@@ -287,6 +337,35 @@ builder.Services.Configure<RedisCachewOptions>(builder.Configuration.GetSection(
 ```json
 { "Cachew": { "Redis": { "FireAndForget": false } } }
 ```
+
+## Rolling it out
+
+An order that keeps the first week boring:
+
+1. Start with the defaults and a short in-memory lifetime. Caching is not all or nothing, so `Enabled`
+   and the per entry overrides let you keep it narrow while you watch.
+2. Watch whether it earns its keep. `MemoryCacheOptions.TrackStatistics` gives memory hit and miss counts
+   from the framework, and the cache logs a warning whenever the distributed layer fails, so a Redis
+   problem shows up as warnings rather than as unexplained latency.
+3. Keep `CachewOptions.Enabled` as an incident switch. Set it to `false` in configuration and the cache
+   becomes a pass through without a deployment.
+4. If you enable the backplane, confirm invalidations still arrive after any disruption to Redis. A
+   connection that is closed is noticed at once; one that goes quiet without closing is noticed when the
+   multiplexer next probes it, which `KeepAlive` governs and defaults to a minute.
+5. If values are large or keys are high cardinality, set `MemoryCacheSizeLimit`. It counts entries
+   rather than bytes, so it bounds memory only as far as values are small.
+
+## Troubleshooting
+
+| What you see | Likely cause |
+| --- | --- |
+| Startup fails naming `IDistributedCache` | No distributed cache registered. Add `AddCachewRedis(...)` or `AddDistributedMemoryCache()`. |
+| Nothing is ever cached | `Enabled` is false, both lifetimes are zero, or `ShouldCache` returns false. |
+| Every read goes to Redis | The in-memory lifetime is zero, or the memory layer is disabled. |
+| Some requests see old values | Another instance's memory layer, until its lifetime expires. Early invalidation needs the backplane, and needs its message to arrive. |
+| A warning about deserialization | One key is being read as two types, or a payload predates a shape change. See [Evolving cached values](#evolving-cached-values). |
+| Warnings about the distributed layer | Redis is unreachable. Reads become misses and writes become no-ops until it returns. |
+| Two applications do not share entries | Different `KeyPrefix` values are different keyspaces. |
 
 ## Build
 
