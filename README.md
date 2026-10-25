@@ -126,13 +126,15 @@ old keyspace ages out on its own, and rolling back just means reading `v1` again
 configuration edit rather than a code change. One key means one type: if a value's type changes,
 change the key with it.
 
-If a payload does not fit the type being read, `System.Text.Json` throws a `JsonException`. Under
-this convention that is a defect rather than something to tolerate, so it is deliberately left to
-surface: the key holds either a forgotten version bump or the wrong type. A payload with no expiry,
-or a literal JSON null, is treated as a miss, which is the hook the library will use if the envelope
-format itself ever changes. Worth being explicit about the residual gap: a conflicting type whose
-JSON shape happens to match cannot be detected at all, because the bytes are valid for both types.
-That is why one key means one type is a convention and not a runtime guarantee.
+If a payload does not fit the type being read, deserialization fails. That entry is treated as a
+cache miss and a warning is logged through `ILogger<TwoLayerCache>` when logging is registered, so
+the caller still gets a value from the factory and the next write replaces the entry with the
+current shape. The cause is still worth chasing: the key holds either a forgotten version bump or
+the wrong type. A payload with no expiry, or a literal JSON null, is a miss as well, which is the
+hook the library will use if the envelope format itself ever changes. Worth being explicit about the
+residual gap: a conflicting type whose JSON shape happens to match cannot be detected at all,
+because the bytes are valid for both types. That is why one key means one type is a convention and
+not a runtime guarantee.
 
 ## Fluent style
 

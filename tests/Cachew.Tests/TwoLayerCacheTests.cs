@@ -1,6 +1,8 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Cachew.Tests;
@@ -501,6 +503,53 @@ public class TwoLayerCacheTests
         // A null value is a valid cached value, so the memory layer serves it as a hit.
         Assert.Null(value);
         Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task GetAsync_WhenThePayloadDoesNotFitTheType_ReturnsMissAndLogs()
+    {
+        var distributed = CreateDistributedCache();
+        await distributed.SetAsync(
+            DefaultOptions.KeyPrefix + "key",
+            Encoding.UTF8.GetBytes("{\"value\":123,\"expiresAtUtc\":\"2099-01-01T00:00:00+00:00\"}"),
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) });
+        var logger = new RecordingLogger<TwoLayerCache>();
+        var cache = new TwoLayerCache(
+            new MemoryCache(new MemoryCacheOptions()), distributed, Options.Create(DefaultOptions), logger);
+
+        Assert.Null(await cache.GetAsync<string>("key"));
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.IsType<JsonException>(entry.Exception);
+        Assert.Contains(DefaultOptions.KeyPrefix + "key", entry.Message);
+    }
+
+    [Fact]
+    public async Task GetOrCreateAsync_WhenThePayloadDoesNotFitTheType_ReloadsAndReplacesTheEntry()
+    {
+        var distributed = CreateDistributedCache();
+        await distributed.SetAsync(
+            DefaultOptions.KeyPrefix + "key",
+            Encoding.UTF8.GetBytes("{\"value\":123,\"expiresAtUtc\":\"2099-01-01T00:00:00+00:00\"}"),
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) });
+        var cache = CreateCache(distributed);
+        var calls = 0;
+
+        Task<string> Factory(CancellationToken _)
+        {
+            calls++;
+            return Task.FromResult("produced");
+        }
+
+        var first = await cache.GetOrCreateAsync("key", Factory);
+        var second = await cache.GetOrCreateAsync("key", Factory);
+
+        // An unreadable entry is a miss, so the factory runs and the entry is rewritten with the
+        // current shape, which the next call can then read.
+        Assert.Equal("produced", first);
+        Assert.Equal("produced", second);
+        Assert.Equal(1, calls);
     }
 
     private static ICachew CreateCache(IDistributedCache distributed)

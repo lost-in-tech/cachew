@@ -11,6 +11,10 @@ public static class ServiceCollectionExtensions
     /// Registers the two layer cache. The memory layer is registered for you; register an
     /// <see cref="IDistributedCache"/> (for example Redis) before or after this call.
     /// </summary>
+    /// <remarks>
+    /// A logger is used if logging is registered in the container, and is optional otherwise, which
+    /// the container satisfies from the constructor's default value.
+    /// </remarks>
     public static IServiceCollection AddCachew(this IServiceCollection services, Action<CachewOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);

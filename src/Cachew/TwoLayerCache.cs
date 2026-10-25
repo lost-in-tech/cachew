@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Cachew;
@@ -11,9 +12,10 @@ internal sealed class TwoLayerCache : ICachew
     private readonly IMemoryCache _memoryCache;
     private readonly IDistributedCache _distributedCache;
     private readonly CachewOptions _options;
+    private readonly ILogger<TwoLayerCache>? _logger;
     private readonly ConcurrentDictionary<string, Task> _inFlight = new();
 
-    public TwoLayerCache(IMemoryCache memoryCache, IDistributedCache distributedCache, IOptions<CachewOptions> options)
+    public TwoLayerCache(IMemoryCache memoryCache, IDistributedCache distributedCache, IOptions<CachewOptions> options, ILogger<TwoLayerCache>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(memoryCache);
         ArgumentNullException.ThrowIfNull(distributedCache);
@@ -22,6 +24,7 @@ internal sealed class TwoLayerCache : ICachew
         _memoryCache = memoryCache;
         _distributedCache = distributedCache;
         _options = options.Value;
+        _logger = logger;
 
         ArgumentNullException.ThrowIfNull(_options.KeyPrefix);
         ArgumentNullException.ThrowIfNull(_options.SerializerOptions);
@@ -200,7 +203,7 @@ internal sealed class TwoLayerCache : ICachew
 
         // Every value written to the distributed layer carries an expiry. One without it is not a
         // usable entry (an in-memory only entry is never written there), so treat it as a miss.
-        var envelope = Deserialize<T>(payload);
+        var envelope = Deserialize<T>(payload, cacheKey);
         if (envelope?.ExpiresAtUtc is not { } expiresAtUtc)
         {
             return (false, default);
@@ -236,8 +239,21 @@ internal sealed class TwoLayerCache : ICachew
     private byte[] Serialize<T>(CacheEnvelope<T> envelope)
         => JsonSerializer.SerializeToUtf8Bytes(envelope, _options.SerializerOptions);
 
-    private CacheEnvelope<T>? Deserialize<T>(byte[] payload)
-        => JsonSerializer.Deserialize<CacheEnvelope<T>>(payload, _options.SerializerOptions);
+    private CacheEnvelope<T>? Deserialize<T>(byte[] payload, string cacheKey)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<CacheEnvelope<T>>(payload, _options.SerializerOptions);
+        }
+        catch (JsonException exception)
+        {
+            // The payload does not fit the type being read, which means a stale entry from an older
+            // shape or one key used with two types. Serve a miss and leave a trail rather than fail
+            // the caller; the next write replaces the entry.
+            _logger?.LogWarning(exception, "Cache entry '{CacheKey}' could not be deserialized and is treated as a miss.", cacheKey);
+            return null;
+        }
+    }
 
     private sealed record CacheEnvelope<T>(T Value, DateTimeOffset? ExpiresAtUtc);
 }
