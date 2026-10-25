@@ -45,7 +45,9 @@ library on nuget.org. The namespaces are still `Cachew` and `Cachew.Redis`. Both
 ## Getting started
 
 Register a distributed cache first, then the cache in front of it. Both packages are needed for this,
-and it works with any DI container even though the shape below is ASP.NET Core:
+and it works with any DI container even though the shape below is ASP.NET Core. In a console app rather
+than ASP.NET Core, add `Microsoft.Extensions.DependencyInjection` and `Microsoft.Extensions.Logging`
+yourself, because ASP.NET Core brings them:
 
 ```csharp
 using Cachew;
