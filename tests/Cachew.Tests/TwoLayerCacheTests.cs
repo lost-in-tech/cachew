@@ -4,6 +4,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Cachew.Tests;
 
@@ -513,17 +514,20 @@ public class TwoLayerCacheTests
             DefaultOptions.KeyPrefix + "key",
             Encoding.UTF8.GetBytes("{\"value\":123,\"expiresAtUtc\":\"2099-01-01T00:00:00+00:00\"}"),
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) });
-        var logger = new RecordingLogger<TwoLayerCache>();
+        var logger = Substitute.For<ILogger<TwoLayerCache>>();
         var cache = new TwoLayerCache(
             new MemoryCache(new MemoryCacheOptions()), distributed, Options.Create(DefaultOptions), logger);
 
         Assert.Null(await cache.GetAsync<string>("key"));
 
-        var entry = Assert.Single(logger.Entries);
-        Assert.Equal(LogLevel.Warning, entry.Level);
-        Assert.IsType<JsonException>(entry.Exception);
-        Assert.Contains(DefaultOptions.KeyPrefix + "key", entry.Message);
+        var arguments = logger.ReceivedCalls().Single(call => call.GetMethodInfo().Name == "Log").GetArguments();
+        Assert.Equal(LogLevel.Warning, arguments[0]);
+        Assert.IsType<JsonException>(arguments[3]);
+        Assert.Contains(DefaultOptions.KeyPrefix + "key", Format(arguments));
     }
+
+    private static string Format(object?[] arguments)
+        => (string)((Delegate)arguments[4]!).DynamicInvoke(arguments[2], arguments[3])!;
 
     [Fact]
     public async Task GetOrCreateAsync_WhenThePayloadDoesNotFitTheType_ReloadsAndReplacesTheEntry()
