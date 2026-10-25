@@ -209,9 +209,9 @@ dotnet pack cachew.slnx --configuration Release
 
 ## Releasing
 
-Push a `v*` tag. The `release` workflow builds, tests, packs, publishes to NuGet.org
-(when the `NUGET_API_KEY` repository secret is set) and creates a GitHub release with the
-packages attached.
+Push a `v*` tag. The `release` workflow builds, tests, packs, publishes to NuGet.org and creates a
+GitHub release with the packages attached. The `NUGET_API_KEY` repository secret is required; the
+workflow fails before publishing if it is missing rather than going green with nothing published.
 
 ## License
 

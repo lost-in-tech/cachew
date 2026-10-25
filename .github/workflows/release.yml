@@ -24,6 +24,13 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Verify the NuGet API key is present
+        run: |
+          if [[ -z "$NUGET_API_KEY" ]]; then
+            echo "::error::NUGET_API_KEY is not set, so this release would publish nothing. Add the repository secret and run again."
+            exit 1
+          fi
+
       - name: Resolve version from tag
         id: version
         run: |
@@ -46,7 +53,6 @@ jobs:
         run: dotnet pack cachew.slnx --configuration Release --no-build -p:Version=${{ steps.version.outputs.value }} --output artifacts
 
       - name: Push to NuGet.org
-        if: env.NUGET_API_KEY != ''
         run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: Upload packages
