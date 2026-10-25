@@ -369,6 +369,32 @@ public sealed class CachewEndToEndTests
         Assert.True(_database.KeyExists(Prefixed(key)));
     }
 
+    [Fact]
+    public async Task ASizeLimitConfiguredAfterAddCachewIsStillHonoured()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(_connection);
+        services.AddCachewRedis();
+
+        // The memory layer is registered first, and bounded afterwards, which has to work because the
+        // options are read when the cache is resolved rather than when it is registered.
+        services.AddCachew();
+        services.Configure<MemoryCacheOptions>(options => options.SizeLimit = 2);
+
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<ICachew>();
+        var memory = provider.GetRequiredService<IMemoryCache>();
+
+        for (var i = 0; i < 5; i++)
+        {
+            await cache.SetAsync($"limit-{i}", i);
+        }
+
+        var inMemory = Enumerable.Range(0, 5).Count(i => memory.TryGetValue("cachew:limit-" + i, out _));
+
+        Assert.True(inMemory <= 2, $"expected at most 2 of 5 entries in memory, found {inMemory}");
+    }
+
     private static string Prefixed(string key) => "cachew:" + key;
 
     private static string Payload(string value) =>

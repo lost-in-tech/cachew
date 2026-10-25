@@ -83,16 +83,16 @@ but not cached. Pass the same `CacheEntryOptions<T>` to `GetAsync`, `SetAsync` a
 `GetOrCreateAsync` to keep a key's policy consistent; a value promoted from the distributed layer
 into memory expires after the effective in-memory time to live.
 
-`AddCachew` registers an unbounded memory cache and sizes entries as one, so registering your own
-`IMemoryCache` with a `SizeLimit` before `AddCachew` counts entries rather than bytes. A null
-`KeyPrefix` or `SerializerOptions` fails at construction rather than silently misbehaving. Options
-are read once at startup, so changing them at runtime has no effect.
+`AddCachew` registers the memory layer for you and does not bound it. A null `KeyPrefix` or
+`SerializerOptions` fails at construction rather than silently misbehaving, and options are read once at
+startup, so changing them at runtime has no effect.
 
-To bound the memory layer, register a sized cache before `AddCachew`:
+To bound it, set `MemoryCacheOptions.SizeLimit`. You do not need to call `AddMemoryCache` again, and the
+order does not matter, because the options are read when the cache is resolved:
 
 ```csharp
-builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000); // entries, not bytes
 builder.Services.AddCachew();
+builder.Services.Configure<MemoryCacheOptions>(options => options.SizeLimit = 10_000);
 ```
 
 Entries are sized as one, so the limit counts entries and the cache can evict to stay under it. Without
