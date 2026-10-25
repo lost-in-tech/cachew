@@ -146,13 +146,33 @@ public sealed class RedisCacheBackplaneIntegrationTests
             logger.ReceivedCalls().Any(call => call.GetMethodInfo().Name == "Log")));
     }
 
-    private ServiceProvider CreateProvider(string channel)
+    [Fact]
+    public void Backplane_IsNotRegistered_UnlessItIsAskedFor()
+    {
+        using var provider = CreateProvider(channel: null);
+
+        Assert.Null(provider.GetService<ICachewBackplane>());
+    }
+
+    [Fact]
+    public void WithBackplane_RegistersTheRedisBackplane()
+    {
+        using var provider = CreateProvider("cachew:test-backplane-registration");
+
+        Assert.IsType<RedisCacheBackplane>(provider.GetRequiredService<ICachewBackplane>());
+    }
+
+    private ServiceProvider CreateProvider(string? channel)
     {
         var services = new ServiceCollection();
         services.AddSingleton(_connection);
         services.AddCachewRedis();
         services.AddCachew();
-        services.WithBackplane(channel);
+        if (channel is not null)
+        {
+            services.WithBackplane(channel);
+        }
+
         return services.BuildServiceProvider();
     }
 }
