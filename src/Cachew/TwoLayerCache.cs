@@ -82,12 +82,12 @@ internal sealed class TwoLayerCache : ICachew
 
         var cacheKey = BuildKey(key);
 
-        if (_options.DefaultL1TimeToLive > TimeSpan.Zero)
+        if (_options.DefaultInMemoryTimeToLive > TimeSpan.Zero)
         {
             _memoryCache.Remove(cacheKey);
         }
 
-        if (_options.DefaultL2TimeToLive > TimeSpan.Zero)
+        if (_options.DefaultDistributedTimeToLive > TimeSpan.Zero)
         {
             try
             {
@@ -130,12 +130,12 @@ internal sealed class TwoLayerCache : ICachew
 
     private async Task SetCoreAsync<T>(string cacheKey, T value, CacheEntryOptions<T>? options, CancellationToken cancellationToken)
     {
-        var l1Ttl = options?.L1TimeToLive ?? _options.DefaultL1TimeToLive;
-        var l2Ttl = options?.L2TimeToLive ?? _options.DefaultL2TimeToLive;
+        var inMemoryTtl = options?.InMemoryTimeToLive ?? _options.DefaultInMemoryTimeToLive;
+        var distributedTtl = options?.DistributedTimeToLive ?? _options.DefaultDistributedTimeToLive;
 
-        if (l2Ttl > TimeSpan.Zero)
+        if (distributedTtl > TimeSpan.Zero)
         {
-            var envelope = new CacheEnvelope<T>(value, DateTimeOffset.UtcNow.Add(l2Ttl));
+            var envelope = new CacheEnvelope<T>(value, DateTimeOffset.UtcNow.Add(distributedTtl));
             var payload = Serialize(envelope);
 
             try
@@ -143,7 +143,7 @@ internal sealed class TwoLayerCache : ICachew
                 await _distributedCache.SetAsync(
                     cacheKey,
                     payload,
-                    new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = l2Ttl },
+                    new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = distributedTtl },
                     cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
@@ -153,31 +153,31 @@ internal sealed class TwoLayerCache : ICachew
                 // value that cannot be serialized still surfaces.
             }
 
-            if (l1Ttl > TimeSpan.Zero)
+            if (inMemoryTtl > TimeSpan.Zero)
             {
-                SetLocal(cacheKey, envelope, l1Ttl);
+                SetInMemory(cacheKey, envelope, inMemoryTtl);
             }
 
             return;
         }
 
-        if (l1Ttl > TimeSpan.Zero)
+        if (inMemoryTtl > TimeSpan.Zero)
         {
-            SetLocal(cacheKey, new CacheEnvelope<T>(value, null), l1Ttl);
+            SetInMemory(cacheKey, new CacheEnvelope<T>(value, null), inMemoryTtl);
         }
     }
 
     private async Task<(bool Found, T? Value)> TryGetAsync<T>(string cacheKey, CacheEntryOptions<T>? options, CancellationToken cancellationToken)
     {
-        var l1Ttl = options?.L1TimeToLive ?? _options.DefaultL1TimeToLive;
-        var l2Ttl = options?.L2TimeToLive ?? _options.DefaultL2TimeToLive;
+        var inMemoryTtl = options?.InMemoryTimeToLive ?? _options.DefaultInMemoryTimeToLive;
+        var distributedTtl = options?.DistributedTimeToLive ?? _options.DefaultDistributedTimeToLive;
 
-        if (l1Ttl > TimeSpan.Zero && _memoryCache.TryGetValue(cacheKey, out CacheEnvelope<T>? local) && local is not null)
+        if (inMemoryTtl > TimeSpan.Zero && _memoryCache.TryGetValue(cacheKey, out CacheEnvelope<T>? local) && local is not null)
         {
             return (true, local.Value);
         }
 
-        if (l2Ttl <= TimeSpan.Zero)
+        if (distributedTtl <= TimeSpan.Zero)
         {
             return (false, default);
         }
@@ -198,8 +198,8 @@ internal sealed class TwoLayerCache : ICachew
             return (false, default);
         }
 
-        // Every value written to L2 carries an expiry. One without it is not a usable entry
-        // (an L1 only entry is never written to L2), so treat it as a miss.
+        // Every value written to the distributed layer carries an expiry. One without it is not a
+        // usable entry (an in-memory only entry is never written there), so treat it as a miss.
         var envelope = Deserialize<T>(payload);
         if (envelope?.ExpiresAtUtc is not { } expiresAtUtc)
         {
@@ -212,9 +212,9 @@ internal sealed class TwoLayerCache : ICachew
             return (false, default);
         }
 
-        if (l1Ttl > TimeSpan.Zero)
+        if (inMemoryTtl > TimeSpan.Zero)
         {
-            SetLocal(cacheKey, envelope, Min(l1Ttl, remaining));
+            SetInMemory(cacheKey, envelope, Min(inMemoryTtl, remaining));
         }
 
         return (true, envelope.Value);
@@ -222,7 +222,7 @@ internal sealed class TwoLayerCache : ICachew
 
     private string BuildKey(string key) => string.Concat(_options.KeyPrefix, key);
 
-    private void SetLocal<T>(string cacheKey, CacheEnvelope<T> envelope, TimeSpan ttl)
+    private void SetInMemory<T>(string cacheKey, CacheEnvelope<T> envelope, TimeSpan ttl)
     {
         _memoryCache.Set(cacheKey, envelope, new MemoryCacheEntryOptions
         {

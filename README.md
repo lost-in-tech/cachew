@@ -1,8 +1,9 @@
 # cachew
 
-Two layer caching for .NET: an in-memory layer (L1) in front of a distributed layer (L2).
+Two layer caching for .NET: an in-memory layer in front of a distributed layer.
 
-Reads hit L1 first and fall back to L2, repopulating L1. Writes populate both layers.
+Reads hit memory first and fall back to the distributed layer, repopulating memory. Writes populate
+both layers.
 
 ## Status
 
@@ -29,8 +30,8 @@ builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "localhost:63
 builder.Services.AddCachew(o =>
 {
     o.KeyPrefix = "myapp:";
-    o.DefaultL1TimeToLive = TimeSpan.FromMinutes(1);
-    o.DefaultL2TimeToLive = TimeSpan.FromMinutes(10);
+    o.DefaultInMemoryTimeToLive = TimeSpan.FromMinutes(1);
+    o.DefaultDistributedTimeToLive = TimeSpan.FromMinutes(10);
 });
 ```
 
@@ -41,7 +42,7 @@ public sealed class Products(ICachew cache)
         => cache.GetOrCreateAsync(
             $"product:{id}",
             async token => await LoadFromDatabaseAsync(id, token),
-            new CacheEntryOptions<Product> { L1TimeToLive = TimeSpan.FromSeconds(30) },
+            new CacheEntryOptions<Product> { InMemoryTimeToLive = TimeSpan.FromSeconds(30) },
             ct);
 }
 ```
@@ -62,14 +63,14 @@ and a time to live of zero or less means "do not use this layer".
 
 ```csharp
 // Application defaults. Zero here turns a layer off for the whole app.
-o.DefaultL1TimeToLive = TimeSpan.FromMinutes(1);
-o.DefaultL2TimeToLive = TimeSpan.Zero; // no distributed layer
+o.DefaultInMemoryTimeToLive = TimeSpan.FromMinutes(1);
+o.DefaultDistributedTimeToLive = TimeSpan.Zero; // no distributed layer
 
 // Per entry overrides.
 new CacheEntryOptions<Product>
 {
-    L1TimeToLive = TimeSpan.Zero,              // skip the in-memory layer for this entry
-    L2TimeToLive = TimeSpan.FromMinutes(10),   // override the distributed lifetime
+    InMemoryTimeToLive = TimeSpan.Zero,              // skip the in-memory layer for this entry
+    DistributedTimeToLive = TimeSpan.FromMinutes(10),   // override the distributed lifetime
     ShouldCache = product => product is not null, // cache only when this returns true
 }
 ```
@@ -77,7 +78,7 @@ new CacheEntryOptions<Product>
 `ShouldCache` runs on the value the factory produced. When it returns false the value is returned
 but not cached. Pass the same `CacheEntryOptions<T>` to `GetAsync`, `SetAsync` and
 `GetOrCreateAsync` to keep a key's policy consistent; a value promoted from the distributed layer
-into memory expires after the effective L1 time to live.
+into memory expires after the effective in-memory time to live.
 
 `AddCachew` registers an unbounded memory cache and sizes entries as one, so registering your own
 `IMemoryCache` with a `SizeLimit` before `AddCachew` counts entries rather than bytes. A null
@@ -125,7 +126,7 @@ The same policy can be built fluently:
 var product = await cache
     .OnCacheMiss(ct => LoadFromDatabaseAsync(id, ct))
     .CacheIf(product => product is not null)
-    .Duration(l1Seconds: 30, l2Seconds: 300)
+    .Duration(inMemorySeconds: 30, distributedSeconds: 300)
     .GetAsync($"product:{id}", ct);
 ```
 

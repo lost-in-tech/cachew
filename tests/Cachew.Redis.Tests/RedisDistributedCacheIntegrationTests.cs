@@ -116,7 +116,7 @@ public sealed class RedisDistributedCacheIntegrationTests
         var services = new ServiceCollection();
         services.AddSingleton(_connection);
         services.AddCachewRedis();
-        services.AddCachew(options => options.DefaultL1TimeToLive = TimeSpan.Zero);
+        services.AddCachew(options => options.DefaultInMemoryTimeToLive = TimeSpan.Zero);
         using var provider = services.BuildServiceProvider();
         var cache = provider.GetRequiredService<ICachew>();
 

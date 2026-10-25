@@ -49,7 +49,7 @@ public class CacheBuilderTests
     }
 
     [Fact]
-    public async Task Duration_WithZeroL2Seconds_DoesNotUseDistributedLayer()
+    public async Task Duration_WithZeroDistributedSeconds_DoesNotUseDistributedLayer()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out _);
 
@@ -60,7 +60,7 @@ public class CacheBuilderTests
     }
 
     [Fact]
-    public async Task Duration_WithZeroL1Seconds_DoesNotUseMemoryLayer()
+    public async Task Duration_WithZeroInMemorySeconds_DoesNotUseMemoryLayer()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out var memory);
 

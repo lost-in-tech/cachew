@@ -52,7 +52,7 @@ public class TwoLayerCacheTests
         await writer.SetAsync("key", "value");
         Assert.Equal("value", await reader.GetAsync<string>("key"));
 
-        // Remove from the distributed layer only. The value must now be served by L1.
+        // Remove from the distributed layer only. The value must now be served from memory.
         await distributed.RemoveAsync(DefaultOptions.KeyPrefix + "key");
         Assert.Equal("value", await reader.GetAsync<string>("key"));
     }
@@ -154,22 +154,22 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task SetAsync_WithZeroL1TimeToLive_DoesNotPopulateMemoryLayer()
+    public async Task SetAsync_WithZeroInMemoryTimeToLive_DoesNotPopulateMemoryLayer()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out var memory);
 
-        await cache.SetAsync("key", "value", new CacheEntryOptions<string> { L1TimeToLive = TimeSpan.Zero });
+        await cache.SetAsync("key", "value", new CacheEntryOptions<string> { InMemoryTimeToLive = TimeSpan.Zero });
 
         Assert.False(memory.TryGetValue(DefaultOptions.KeyPrefix + "key", out _));
         Assert.NotNull(await distributed.GetAsync(DefaultOptions.KeyPrefix + "key"));
     }
 
     [Fact]
-    public async Task SetAsync_WithZeroL2TimeToLive_DoesNotPopulateDistributedLayer()
+    public async Task SetAsync_WithZeroDistributedTimeToLive_DoesNotPopulateDistributedLayer()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out var memory);
 
-        await cache.SetAsync("key", "value", new CacheEntryOptions<string> { L2TimeToLive = TimeSpan.Zero });
+        await cache.SetAsync("key", "value", new CacheEntryOptions<string> { DistributedTimeToLive = TimeSpan.Zero });
 
         Assert.Null(await distributed.GetAsync(DefaultOptions.KeyPrefix + "key"));
         Assert.True(memory.TryGetValue(DefaultOptions.KeyPrefix + "key", out _));
@@ -182,8 +182,8 @@ public class TwoLayerCacheTests
 
         await cache.SetAsync("key", "value", new CacheEntryOptions<string>
         {
-            L1TimeToLive = TimeSpan.Zero,
-            L2TimeToLive = TimeSpan.Zero,
+            InMemoryTimeToLive = TimeSpan.Zero,
+            DistributedTimeToLive = TimeSpan.Zero,
         });
 
         Assert.Null(await distributed.GetAsync(DefaultOptions.KeyPrefix + "key"));
@@ -222,9 +222,9 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_WithL1Disabled_ReadsFromDistributedLayerWithoutPopulatingMemory()
+    public async Task GetAsync_WithInMemoryDisabled_ReadsFromDistributedLayerWithoutPopulatingMemory()
     {
-        var options = new CachewOptions { DefaultL1TimeToLive = TimeSpan.Zero };
+        var options = new CachewOptions { DefaultInMemoryTimeToLive = TimeSpan.Zero };
         var distributed = CreateDistributedCache();
         var writer = CreateCache(distributed);
         var memory = new MemoryCache(new MemoryCacheOptions());
@@ -237,9 +237,9 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_WithL2Disabled_DoesNotReadDistributedLayer()
+    public async Task GetAsync_WithDistributedDisabled_DoesNotReadDistributedLayer()
     {
-        var options = new CachewOptions { DefaultL2TimeToLive = TimeSpan.Zero };
+        var options = new CachewOptions { DefaultDistributedTimeToLive = TimeSpan.Zero };
         var distributed = CreateDistributedCache();
         var writer = CreateCache(distributed);
         var reader = new TwoLayerCache(new MemoryCache(new MemoryCacheOptions()), distributed, Options.Create(options));
@@ -250,9 +250,9 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_PromotedEntry_ExpiresWithL1TimeToLive()
+    public async Task GetAsync_PromotedEntry_ExpiresWithInMemoryTimeToLive()
     {
-        var options = new CachewOptions { DefaultL1TimeToLive = TimeSpan.FromMilliseconds(100) };
+        var options = new CachewOptions { DefaultInMemoryTimeToLive = TimeSpan.FromMilliseconds(100) };
         var distributed = CreateDistributedCache();
         var writer = CreateCache(distributed);
         var memory = new MemoryCache(new MemoryCacheOptions());
@@ -260,7 +260,7 @@ public class TwoLayerCacheTests
 
         await writer.SetAsync("key", "value");
 
-        // First read promotes the value into L1 for the configured L1 time to live.
+        // First read promotes the value into memory for the configured in-memory time to live.
         Assert.Equal("value", await reader.GetAsync<string>("key"));
         Assert.True(memory.TryGetValue(options.KeyPrefix + "key", out _));
 
@@ -271,9 +271,9 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task RemoveAsync_WithL2Disabled_DoesNotTouchDistributedLayer()
+    public async Task RemoveAsync_WithDistributedDisabled_DoesNotTouchDistributedLayer()
     {
-        var options = new CachewOptions { DefaultL2TimeToLive = TimeSpan.Zero };
+        var options = new CachewOptions { DefaultDistributedTimeToLive = TimeSpan.Zero };
         var distributed = CreateDistributedCache();
         await distributed.SetAsync(
             options.KeyPrefix + "key",

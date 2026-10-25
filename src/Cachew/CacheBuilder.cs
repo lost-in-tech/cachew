@@ -29,8 +29,8 @@ public sealed class CacheBuilder<T>
     private readonly Func<CancellationToken, Task<T>> _factory;
 
     private Func<T, bool>? _shouldCache;
-    private TimeSpan? _l1TimeToLive;
-    private TimeSpan? _l2TimeToLive;
+    private TimeSpan? _inMemoryTimeToLive;
+    private TimeSpan? _distributedTimeToLive;
 
     internal CacheBuilder(ICachew cache, Func<CancellationToken, Task<T>> factory)
     {
@@ -55,12 +55,12 @@ public sealed class CacheBuilder<T>
     /// Sets the time to live for both layers. Null uses the configured default, and zero or less
     /// disables the layer.
     /// </summary>
-    /// <param name="l1TimeToLive">In-memory layer time to live, or null for the default.</param>
-    /// <param name="l2TimeToLive">Distributed layer time to live, or null for the default.</param>
-    public CacheBuilder<T> Duration(TimeSpan? l1TimeToLive, TimeSpan? l2TimeToLive)
+    /// <param name="inMemoryTimeToLive">In-memory layer time to live, or null for the default.</param>
+    /// <param name="distributedTimeToLive">Distributed layer time to live, or null for the default.</param>
+    public CacheBuilder<T> Duration(TimeSpan? inMemoryTimeToLive, TimeSpan? distributedTimeToLive)
     {
-        _l1TimeToLive = l1TimeToLive;
-        _l2TimeToLive = l2TimeToLive;
+        _inMemoryTimeToLive = inMemoryTimeToLive;
+        _distributedTimeToLive = distributedTimeToLive;
         return this;
     }
 
@@ -68,12 +68,12 @@ public sealed class CacheBuilder<T>
     /// Sets the time to live for both layers in seconds. Null uses the configured default, and zero
     /// or less disables the layer.
     /// </summary>
-    /// <param name="l1Seconds">In-memory layer time to live in seconds, or null for the default.</param>
-    /// <param name="l2Seconds">Distributed layer time to live in seconds, or null for the default.</param>
-    public CacheBuilder<T> Duration(int? l1Seconds, int? l2Seconds)
+    /// <param name="inMemorySeconds">In-memory layer time to live in seconds, or null for the default.</param>
+    /// <param name="distributedSeconds">Distributed layer time to live in seconds, or null for the default.</param>
+    public CacheBuilder<T> Duration(int? inMemorySeconds, int? distributedSeconds)
     {
-        _l1TimeToLive = l1Seconds is null ? null : TimeSpan.FromSeconds(l1Seconds.Value);
-        _l2TimeToLive = l2Seconds is null ? null : TimeSpan.FromSeconds(l2Seconds.Value);
+        _inMemoryTimeToLive = inMemorySeconds is null ? null : TimeSpan.FromSeconds(inMemorySeconds.Value);
+        _distributedTimeToLive = distributedSeconds is null ? null : TimeSpan.FromSeconds(distributedSeconds.Value);
         return this;
     }
 
@@ -82,12 +82,12 @@ public sealed class CacheBuilder<T>
     /// <param name="cancellationToken">A cancellation token.</param>
     public Task<T> GetAsync(string key, CancellationToken cancellationToken = default)
     {
-        var options = _shouldCache is null && _l1TimeToLive is null && _l2TimeToLive is null
+        var options = _shouldCache is null && _inMemoryTimeToLive is null && _distributedTimeToLive is null
             ? null
             : new CacheEntryOptions<T>
             {
-                L1TimeToLive = _l1TimeToLive,
-                L2TimeToLive = _l2TimeToLive,
+                InMemoryTimeToLive = _inMemoryTimeToLive,
+                DistributedTimeToLive = _distributedTimeToLive,
                 ShouldCache = _shouldCache,
             };
 

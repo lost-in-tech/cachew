@@ -7,18 +7,18 @@ namespace Cachew;
 public sealed class CacheEntryOptions<T>
 {
     /// <summary>
-    /// Time to live in the in-memory layer (L1). Unset falls back to
-    /// <see cref="CachewOptions.DefaultL1TimeToLive"/>. Zero or negative means the in-memory layer
+    /// Time to live in the in-memory layer. Unset falls back to
+    /// <see cref="CachewOptions.DefaultInMemoryTimeToLive"/>. Zero or negative means the in-memory layer
     /// is not used for this entry.
     /// </summary>
-    public TimeSpan? L1TimeToLive { get; set; }
+    public TimeSpan? InMemoryTimeToLive { get; set; }
 
     /// <summary>
-    /// Time to live in the distributed layer (L2). Unset falls back to
-    /// <see cref="CachewOptions.DefaultL2TimeToLive"/>. Zero or negative means the distributed layer
+    /// Time to live in the distributed layer. Unset falls back to
+    /// <see cref="CachewOptions.DefaultDistributedTimeToLive"/>. Zero or negative means the distributed layer
     /// is not used for this entry.
     /// </summary>
-    public TimeSpan? L2TimeToLive { get; set; }
+    public TimeSpan? DistributedTimeToLive { get; set; }
 
     /// <summary>
     /// Optional predicate deciding whether a value produced by
