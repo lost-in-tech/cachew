@@ -427,21 +427,24 @@ dotnet run --project tests/Cachew.Benchmarks --configuration Release
 Releases are driven by release-please. Merge conventional commits to `main` (`feat:`, `fix:`, or `!`
 for a breaking change) and it opens a release pull request that bumps `version.txt`, the `<Version>`
 in `Directory.Build.props` and `CHANGELOG.md`. Merging that pull request makes release-please create
-the tag and the GitHub release, which starts the `release` workflow: it builds, tests, packs,
-publishes to NuGet.org and attaches the packages to the release.
+the tag and the GitHub release, and the same run then builds, tests, packs, publishes to NuGet.org
+and attaches the packages to the release.
 
 release-please reads the commit message, so a change merged as a plain sentence is not released. Use
 squash merges, and make the pull request title a conventional commit. To choose the version yourself,
 put `Release-As: 1.2.3` in a commit body on `main`.
 
-Two secrets and one policy are needed:
+Publishing runs in that same workflow rather than one triggered by the tag, because a tag created
+with the default `GITHUB_TOKEN` does not start a workflow run. That is why a personal access token is
+not needed.
 
-- `RELEASE_PLEASE_TOKEN`, a personal access token with `contents` and `pull-requests` write. The
-  default `GITHUB_TOKEN` will not do: GitHub does not start workflow runs for events it raises, so a
-  tag created with it would publish nothing.
-- `NUGET_USER`, holding your nuget.org profile name (not your email).
+Three things are needed:
+
+- A `NUGET_USER` secret holding your nuget.org profile name (not your email).
 - A trusted publishing policy on nuget.org matching repository owner `lost-in-tech`, repository
   `cachew` and workflow file `release.yml`.
+- "Allow GitHub Actions to create and approve pull requests" enabled under Settings > Actions >
+  General, so the release pull request can be opened.
 
 Publishing uses that policy rather than a stored NuGet API key: the workflow exchanges a GitHub OIDC
 token for an API key that lives for one hour. It fails before publishing if `NUGET_USER` is missing
