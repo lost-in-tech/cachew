@@ -482,6 +482,27 @@ public class TwoLayerCacheTests
         Assert.Equal(0, calls);
     }
 
+    [Fact]
+    public async Task GetOrCreateAsync_ReturnsACachedNull_FromTheMemoryLayer()
+    {
+        var cache = CreateCache(out _);
+        await cache.SetAsync<string?>("key", null);
+
+        var calls = 0;
+
+        Task<string?> Factory(CancellationToken _)
+        {
+            calls++;
+            return Task.FromResult<string?>("produced");
+        }
+
+        var value = await cache.GetOrCreateAsync("key", Factory);
+
+        // A null value is a valid cached value, so the memory layer serves it as a hit.
+        Assert.Null(value);
+        Assert.Equal(0, calls);
+    }
+
     private static ICachew CreateCache(IDistributedCache distributed)
         => new TwoLayerCache(new MemoryCache(new MemoryCacheOptions()), distributed, Options.Create(DefaultOptions));
 
