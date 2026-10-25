@@ -10,7 +10,11 @@ public sealed class RedisFixture : IAsyncLifetime
 {
     private readonly RedisContainer _container = new RedisBuilder("redis:7.4").Build();
 
+    /// <summary>Stands in for one application's connection.</summary>
     public IConnectionMultiplexer Connection { get; private set; } = null!;
+
+    /// <summary>Stands in for a second application's connection, so cross instance tests do not share one.</summary>
+    public IConnectionMultiplexer SecondConnection { get; private set; } = null!;
 
     public string ConnectionString { get; private set; } = null!;
 
@@ -19,10 +23,12 @@ public sealed class RedisFixture : IAsyncLifetime
         await _container.StartAsync();
         ConnectionString = _container.GetConnectionString();
         Connection = await ConnectionMultiplexer.ConnectAsync(ConnectionString);
+        SecondConnection = await ConnectionMultiplexer.ConnectAsync(ConnectionString);
     }
 
     public async Task DisposeAsync()
     {
+        await SecondConnection.DisposeAsync();
         await Connection.DisposeAsync();
         await _container.DisposeAsync();
     }

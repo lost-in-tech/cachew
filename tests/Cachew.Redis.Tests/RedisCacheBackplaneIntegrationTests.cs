@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -10,11 +12,15 @@ namespace Cachew.Redis.Tests;
 public sealed class RedisCacheBackplaneIntegrationTests
 {
     private readonly IConnectionMultiplexer _connection;
+    private readonly IConnectionMultiplexer _secondConnection;
+    private readonly IDatabase _database;
     private readonly ISubscriber _subscriber;
 
     public RedisCacheBackplaneIntegrationTests(RedisFixture fixture)
     {
         _connection = fixture.Connection;
+        _secondConnection = fixture.SecondConnection;
+        _database = fixture.Connection.GetDatabase();
         _subscriber = fixture.Connection.GetSubscriber();
     }
 
@@ -24,7 +30,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
         const string channel = "cachew:test-backplane-receive";
         using var publisher = new RedisCacheBackplane(_connection, channel);
         using var subscriber = new RedisCacheBackplane(_connection, channel);
-        var received = new List<string>();
+        var received = new ConcurrentBag<string>();
         using var subscription = subscriber.Subscribe(received.Add);
 
         await TestWait.Eventually(() =>
@@ -33,9 +39,13 @@ public sealed class RedisCacheBackplaneIntegrationTests
             return Task.FromResult(received.Contains("warmup"));
         });
 
-        publisher.Publish("cachew:key");
-
-        await TestWait.Eventually(() => Task.FromResult(received.Contains("cachew:key")));
+        // Published in the loop rather than once: delivery is best effort, so a single
+        // fire-and-forget publish is not guaranteed to arrive.
+        await TestWait.Eventually(() =>
+        {
+            publisher.Publish("cachew:key");
+            return Task.FromResult(received.Contains("cachew:key"));
+        });
     }
 
     [Fact]
@@ -44,8 +54,8 @@ public sealed class RedisCacheBackplaneIntegrationTests
         const string channel = "cachew:test-backplane-echo";
         using var self = new RedisCacheBackplane(_connection, channel);
         using var other = new RedisCacheBackplane(_connection, channel);
-        var selfReceived = new List<string>();
-        var otherReceived = new List<string>();
+        var selfReceived = new ConcurrentBag<string>();
+        var otherReceived = new ConcurrentBag<string>();
         using var selfSubscription = self.Subscribe(selfReceived.Add);
         using var otherSubscription = other.Subscribe(otherReceived.Add);
 
@@ -59,7 +69,11 @@ public sealed class RedisCacheBackplaneIntegrationTests
 
         self.Publish("cachew:key");
 
-        await TestWait.Eventually(() => Task.FromResult(otherReceived.Contains("cachew:key")));
+        await TestWait.Eventually(() =>
+        {
+            self.Publish("cachew:key");
+            return Task.FromResult(otherReceived.Contains("cachew:key"));
+        });
 
         Assert.Contains("cachew:key", otherReceived);
         Assert.DoesNotContain("cachew:key", selfReceived);
@@ -71,7 +85,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
         const string channel = "cachew:test-backplane-unreadable";
         var redisChannel = RedisChannel.Literal(channel);
         using var backplane = new RedisCacheBackplane(_connection, channel);
-        var received = new List<string>();
+        var received = new ConcurrentBag<string>();
         using var subscription = backplane.Subscribe(received.Add);
 
         await TestWait.Eventually(async () =>
@@ -80,11 +94,13 @@ public sealed class RedisCacheBackplaneIntegrationTests
             return received.Contains("warmup");
         });
 
-        await _subscriber.PublishAsync(redisChannel, "not json");
-        await _subscriber.PublishAsync(redisChannel, "{\"version\":99,\"origin\":\"other\",\"key\":\"future\"}");
-        await _subscriber.PublishAsync(redisChannel, "{\"version\":1,\"origin\":\"other\",\"key\":\"cachew:key\"}");
-
-        await TestWait.Eventually(() => Task.FromResult(received.Contains("cachew:key")));
+        await TestWait.Eventually(async () =>
+        {
+            await _subscriber.PublishAsync(redisChannel, "not json");
+            await _subscriber.PublishAsync(redisChannel, "{\"version\":99,\"origin\":\"other\",\"key\":\"future\"}");
+            await _subscriber.PublishAsync(redisChannel, "{\"version\":1,\"origin\":\"other\",\"key\":\"cachew:key\"}");
+            return received.Contains("cachew:key");
+        });
 
         Assert.DoesNotContain("future", received);
     }
@@ -93,23 +109,30 @@ public sealed class RedisCacheBackplaneIntegrationTests
     public async Task RemovingOnOneInstance_EvictsTheMemoryLayerOfTheOther()
     {
         const string channel = "cachew:test-backplane-evict";
-        using var providerA = CreateProvider(channel);
-        using var providerB = CreateProvider(channel);
+        using var providerA = CreateProvider(_connection, channel);
+        using var providerB = CreateProvider(_secondConnection, channel);
         var cacheA = providerA.GetRequiredService<ICachew>();
         var cacheB = providerB.GetRequiredService<ICachew>();
         var memoryB = providerB.GetRequiredService<IMemoryCache>();
         const string key = "evict-me";
         var cacheKey = "cachew:" + key;
 
-        await cacheA.SetAsync(key, "value");
+        // Seeded directly in Redis so that no notification is in flight while B promotes it: a
+        // notification from an earlier write would evict the copy B has just taken.
+        await _database.StringSetAsync(cacheKey, Payload("value"), TimeSpan.FromMinutes(5));
 
         // B reads it, which promotes it into B's own memory layer.
         await TestWait.Eventually(async () => await cacheB.GetAsync<string>(key) is not null);
         Assert.True(memoryB.TryGetValue(cacheKey, out _));
 
-        await cacheA.RemoveAsync(key);
+        // Removed in the loop rather than once: the notification is best effort, so a single
+        // fire-and-forget publish is not guaranteed to arrive.
+        await TestWait.Eventually(async () =>
+        {
+            await cacheA.RemoveAsync(key);
+            return !memoryB.TryGetValue(cacheKey, out _);
+        });
 
-        await TestWait.Eventually(() => Task.FromResult(!memoryB.TryGetValue(cacheKey, out _)));
         Assert.False(memoryB.TryGetValue(cacheKey, out _));
     }
 
@@ -131,7 +154,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
         var redisChannel = RedisChannel.Literal(channel);
         var logger = Substitute.For<ILogger<RedisCacheBackplane>>();
         using var backplane = new RedisCacheBackplane(_connection, channel, logger);
-        var received = new List<string>();
+        var received = new ConcurrentBag<string>();
         using var subscription = backplane.Subscribe(received.Add);
 
         await TestWait.Eventually(async () =>
@@ -140,16 +163,17 @@ public sealed class RedisCacheBackplaneIntegrationTests
             return received.Contains("warmup");
         });
 
-        await _subscriber.PublishAsync(redisChannel, "not json");
-
-        await TestWait.Eventually(() => Task.FromResult(
-            logger.ReceivedCalls().Any(call => call.GetMethodInfo().Name == "Log")));
+        await TestWait.Eventually(async () =>
+        {
+            await _subscriber.PublishAsync(redisChannel, "not json");
+            return logger.ReceivedCalls().Any(call => call.GetMethodInfo().Name == "Log");
+        });
     }
 
     [Fact]
     public void Backplane_IsNotRegistered_UnlessItIsAskedFor()
     {
-        using var provider = CreateProvider(channel: null);
+        using var provider = CreateProvider(_connection, channel: null);
 
         Assert.Null(provider.GetService<ICachewBackplane>());
     }
@@ -157,7 +181,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
     [Fact]
     public void WithBackplane_RegistersTheRedisBackplane()
     {
-        using var provider = CreateProvider("cachew:test-backplane-registration");
+        using var provider = CreateProvider(_connection, "cachew:test-backplane-registration");
 
         Assert.IsType<RedisCacheBackplane>(provider.GetRequiredService<ICachewBackplane>());
     }
@@ -166,32 +190,39 @@ public sealed class RedisCacheBackplaneIntegrationTests
     public async Task ASetOnOneInstance_EvictsTheOtherMemoryLayer_ButLeavesRedisAlone()
     {
         const string channel = "cachew:test-backplane-set";
-        using var providerA = CreateProvider(channel);
-        using var providerB = CreateProvider(channel);
+        using var providerA = CreateProvider(_connection, channel);
+        using var providerB = CreateProvider(_secondConnection, channel);
         var cacheA = providerA.GetRequiredService<ICachew>();
         var cacheB = providerB.GetRequiredService<ICachew>();
         var memoryB = providerB.GetRequiredService<IMemoryCache>();
         const string key = "set-me";
         var cacheKey = "cachew:" + key;
 
-        // A stores a version and B reads it, so both instances hold a copy of it.
-        await cacheA.SetAsync(key, "v1");
+        // Seeded directly in Redis so that no notification is in flight while B promotes it.
+        await _database.StringSetAsync(cacheKey, Payload("v1"), TimeSpan.FromMinutes(5));
         await TestWait.Eventually(async () => await cacheB.GetAsync<string>(key) is "v1");
         Assert.True(memoryB.TryGetValue(cacheKey, out _));
 
         // A stores a second version. B has to drop its own copy, and the stored value has to survive:
         // an invalidation evicts the in-memory copy of the instance that receives it, nothing else.
-        await cacheA.SetAsync(key, "v2");
+        // Stored in the loop rather than once, because the notification is best effort.
+        await TestWait.Eventually(async () =>
+        {
+            await cacheA.SetAsync(key, "v2");
+            return !memoryB.TryGetValue(cacheKey, out _);
+        });
 
-        await TestWait.Eventually(() => Task.FromResult(!memoryB.TryGetValue(cacheKey, out _)));
         await TestWait.Eventually(async () => await cacheB.GetAsync<string>(key) is "v2");
         Assert.True(_connection.GetDatabase().KeyExists(cacheKey));
     }
 
-    private ServiceProvider CreateProvider(string? channel)
+    private static string Payload(string value) =>
+        $"{{\"value\":{JsonSerializer.Serialize(value)},\"expiresAtUtc\":\"{DateTimeOffset.UtcNow.AddMinutes(5):O}\"}}";
+
+    private static ServiceProvider CreateProvider(IConnectionMultiplexer connection, string? channel)
     {
         var services = new ServiceCollection();
-        services.AddSingleton(_connection);
+        services.AddSingleton(connection);
         services.AddCachewRedis();
         services.AddCachew();
         if (channel is not null)
