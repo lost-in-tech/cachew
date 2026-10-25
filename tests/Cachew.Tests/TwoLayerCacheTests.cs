@@ -692,6 +692,23 @@ public class TwoLayerCacheTests
         Assert.Null(await cache.GetAsync<string>("key"));
     }
 
+    [Fact]
+    public async Task InvalidationFromAnotherInstance_DoesNotPublishAgain()
+    {
+        var backplane = new FakeBackplane();
+        var cache = CreateCache(CreateDistributedCache(), backplane, out _);
+
+        await cache.SetAsync("key", "value");
+        Assert.Single(backplane.Published);
+        backplane.Published.Clear();
+
+        backplane.Raise(DefaultOptions.KeyPrefix + "key");
+
+        // A received invalidation evicts the local copy and nothing else: it does not re-publish, so
+        // one change cannot fan out and one instance cannot start echoing another.
+        Assert.Empty(backplane.Published);
+    }
+
     private static ICachew CreateCache(IDistributedCache distributed, ICachewBackplane backplane, out IMemoryCache memory, CachewOptions? options = null)
     {
         memory = new MemoryCache(new MemoryCacheOptions());
