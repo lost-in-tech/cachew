@@ -6,7 +6,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write # gh release create
+  id-token: write # OIDC token for NuGet trusted publishing
 
 env:
   DOTNET_NOLOGO: true
@@ -15,8 +16,6 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    env:
-      NUGETKEY: ${{ secrets.NUGETKEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,10 +23,12 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Verify the NuGet API key is present
+      - name: Verify the NuGet user is configured
+        env:
+          NUGET_USER: ${{ secrets.NUGET_USER }}
         run: |
-          if [[ -z "$NUGETKEY" ]]; then
-            echo "::error::The NUGETKEY secret is not available to this repository, so this release would publish nothing. Grant the organisation secret to this repository, then run again."
+          if [[ -z "$NUGET_USER" ]]; then
+            echo "::error::NUGET_USER is not set, so the OIDC login cannot run and this release would publish nothing. Add the NUGET_USER repository secret holding your nuget.org profile name, then run again."
             exit 1
           fi
 
@@ -52,8 +53,16 @@ jobs:
       - name: Pack
         run: dotnet pack cachew.slnx --configuration Release --no-build -p:Version=${{ steps.version.outputs.value }} --output artifacts
 
+      # Exchanges the GitHub OIDC token for a nuget.org API key that lives for one hour, so this runs
+      # immediately before the push rather than earlier in the job.
+      - name: NuGet login (OIDC to a temporary API key)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       - name: Push to NuGet.org
-        run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGETKEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: Upload packages
         uses: actions/upload-artifact@v4

@@ -210,9 +210,14 @@ dotnet pack cachew.slnx --configuration Release
 ## Releasing
 
 Push a `v*` tag. The `release` workflow builds, tests, packs, publishes to NuGet.org and creates a
-GitHub release with the packages attached. The `NUGETKEY` secret (organisation level, granted to this
-repository) is required; the workflow fails before publishing if it is not available rather than going
-green with nothing published.
+GitHub release with the packages attached.
+
+Publishing uses NuGet trusted publishing, so no long lived NuGet API key is stored. The workflow
+exchanges a GitHub OIDC token for an API key that lives for one hour. Two things are needed:
+a `NUGET_USER` secret holding your nuget.org profile name (not your email), and a trusted publishing
+policy on nuget.org matching repository owner `lost-in-tech`, repository `cachew` and workflow file
+`release.yml`. The workflow fails before publishing if `NUGET_USER` is missing rather than going green
+with nothing published.
 
 ## License
 
