@@ -71,6 +71,9 @@ app.MapGet("/products/{id:int}", async (int id, ICachew cache, CancellationToken
         cancellationToken: ct));
 ```
 
+Every operation returns a `ValueTask`, so a read served from memory allocates no task at all. Await a
+returned value once; if a result has to be awaited more than once, call `AsTask()` on it first.
+
 `AddCachewRedis` registers the Redis layer and the cache over it, taking the same options callback as
 `AddCachew`. To use a distributed cache other than Redis, register it yourself and call `AddCachew`:
 
@@ -409,6 +412,15 @@ dotnet run --project tests/Cachew.Package.Smoke --configuration Release
 
 That needs a Redis. CI runs the same two commands, on a clean machine. If you repack a version you have
 already restored, remove `tests/Cachew.Package.Smoke/obj` first, because NuGet caches by id and version.
+
+## Benchmarks
+
+`tests/Cachew.Benchmarks` measures the hot read and write paths with BenchmarkDotNet. It is in the
+solution, so CI builds it, but it is not a test project, so CI does not run it. Run it on demand:
+
+```bash
+dotnet run --project tests/Cachew.Benchmarks --configuration Release
+```
 
 ## Releasing
 

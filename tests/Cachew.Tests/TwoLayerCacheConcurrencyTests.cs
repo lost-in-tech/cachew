@@ -35,7 +35,7 @@ public class TwoLayerCacheConcurrencyTests
             for (var i = 0; i < 10; i++)
             {
                 var captured = key;
-                callers.Add((captured, Task.Run(() => cache.GetOrCreateAsync(captured, ct => Factory(captured, ct)))));
+                callers.Add((captured, Task.Run(() => cache.GetOrCreateAsync(captured, ct => Factory(captured, ct)).AsTask())));
             }
         }
 
@@ -68,10 +68,10 @@ public class TwoLayerCacheConcurrencyTests
         foreach (var key in keys)
         {
             var captured = key;
-            operations.Add(Task.Run(() => cache.SetAsync(captured, captured)));
-            operations.Add(Task.Run(() => cache.GetAsync<string>(captured)));
-            operations.Add(Task.Run(() => cache.GetOrCreateAsync(captured, _ => Task.FromResult(captured))));
-            operations.Add(Task.Run(() => cache.RemoveAsync(captured)));
+            operations.Add(Task.Run(() => cache.SetAsync(captured, captured).AsTask()));
+            operations.Add(Task.Run(() => cache.GetAsync<string>(captured).AsTask()));
+            operations.Add(Task.Run(() => cache.GetOrCreateAsync(captured, _ => Task.FromResult(captured)).AsTask()));
+            operations.Add(Task.Run(() => cache.RemoveAsync(captured).AsTask()));
         }
 
         await Task.WhenAll(operations);
@@ -91,7 +91,7 @@ public class TwoLayerCacheConcurrencyTests
         var calls = 0;
 
         var callers = Enumerable.Range(0, 100)
-            .Select(_ => Task.Run(() => cache.GetOrCreateAsync("key", __ => Task.FromResult(Interlocked.Increment(ref calls)))))
+            .Select(_ => Task.Run(() => cache.GetOrCreateAsync("key", __ => Task.FromResult(Interlocked.Increment(ref calls))).AsTask()))
             .ToArray();
 
         var results = await Task.WhenAll(callers);

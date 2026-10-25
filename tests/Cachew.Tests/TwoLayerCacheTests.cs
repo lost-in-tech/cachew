@@ -114,7 +114,7 @@ public class TwoLayerCacheTests
         }
 
         var callers = Enumerable.Range(0, 10)
-            .Select(_ => cache.GetOrCreateAsync("key", Factory))
+            .Select(_ => cache.GetOrCreateAsync("key", Factory).AsTask())
             .ToArray();
 
         // Let every caller reach the coalescing point before the factory completes.
@@ -142,8 +142,8 @@ public class TwoLayerCacheTests
             throw new InvalidOperationException("boom");
         }
 
-        var first = cache.GetOrCreateAsync("key", Factory);
-        var second = cache.GetOrCreateAsync("key", Factory);
+        var first = cache.GetOrCreateAsync("key", Factory).AsTask();
+        var second = cache.GetOrCreateAsync("key", Factory).AsTask();
 
         await Task.Delay(100);
         gate.SetResult();
@@ -302,7 +302,7 @@ public class TwoLayerCacheTests
             return 42;
         }
 
-        var first = cache.GetOrCreateAsync("key", Factory, null, leader.Token);
+        var first = cache.GetOrCreateAsync("key", Factory, null, leader.Token).AsTask();
         await Task.Delay(50);
         var second = cache.GetOrCreateAsync("key", Factory, null, CancellationToken.None);
 
@@ -379,7 +379,7 @@ public class TwoLayerCacheTests
     {
         var cache = CreateCache(new FailingDistributedCache(new OperationCanceledException()));
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cache.GetAsync<string>("key"));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cache.GetAsync<string>("key").AsTask());
     }
 
     [Fact]
@@ -418,7 +418,7 @@ public class TwoLayerCacheTests
         // other failure. It cannot distinguish the internal cancellation state, because the async
         // state machine normalises an OperationCanceledException to a cancelled task either way.
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => cache.GetOrCreateAsync("key", _ => Task.FromCanceled<int>(cts.Token)));
+            () => cache.GetOrCreateAsync("key", _ => Task.FromCanceled<int>(cts.Token)).AsTask());
     }
 
     [Fact]

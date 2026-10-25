@@ -43,7 +43,7 @@ void Check(bool ok, string what)
         return 42;
     }
 
-    var results = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => cache.GetOrCreateAsync("answer", Factory)));
+    var results = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => cache.GetOrCreateAsync("answer", Factory).AsTask()));
     Check(results.All(value => value == 42), "a miss returns the factory value to every caller");
     Check(calls == 1, $"concurrent misses run the factory once (ran {calls} time(s))");
 

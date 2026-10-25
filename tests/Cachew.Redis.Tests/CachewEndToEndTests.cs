@@ -168,7 +168,7 @@ public sealed class CachewEndToEndTests
             return 42;
         }
 
-        var callers = Enumerable.Range(0, 10).Select(_ => cache.GetOrCreateAsync(key, Factory)).ToArray();
+        var callers = Enumerable.Range(0, 10).Select(_ => cache.GetOrCreateAsync(key, Factory).AsTask()).ToArray();
         await Task.Delay(100);
         Assert.Equal(1, calls);
 

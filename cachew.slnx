@@ -6,5 +6,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/Cachew.Tests/Cachew.Tests.csproj" />
     <Project Path="tests/Cachew.Redis.Tests/Cachew.Redis.Tests.csproj" />
+    <Project Path="tests/Cachew.Benchmarks/Cachew.Benchmarks.csproj" />
   </Folder>
 </Solution>

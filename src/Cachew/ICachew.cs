@@ -4,20 +4,26 @@ namespace Cachew;
 /// A two layer cache that reads from an in-memory layer first and falls back to a
 /// distributed layer. Writes populate both layers.
 /// </summary>
+/// <remarks>
+/// Every operation returns a <see cref="ValueTask"/> or <see cref="ValueTask{TResult}"/>, so a memory
+/// hit completes without allocating a task. <see cref="ValueTask"/> must be awaited once: do not await
+/// a returned value more than once, or start more than one await of it. If a result has to be awaited
+/// more than once, call <see cref="ValueTask.AsTask"/> first.
+/// </remarks>
 public interface ICachew
 {
     /// <summary>Gets a value, checking the in-memory layer before the distributed layer.</summary>
     /// <param name="key">The cache key.</param>
     /// <param name="options">Per entry overrides. Unset members fall back to the configured defaults.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
-    Task<T?> GetAsync<T>(string key, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default);
+    ValueTask<T?> GetAsync<T>(string key, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>Writes a value to both layers.</summary>
     /// <param name="key">The cache key.</param>
     /// <param name="value">The value to cache.</param>
     /// <param name="options">Per entry overrides. Unset members fall back to the configured defaults.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
-    Task SetAsync<T>(string key, T value, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default);
+    ValueTask SetAsync<T>(string key, T value, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets a value, invoking <paramref name="factory"/> to produce and cache it on a miss.
@@ -32,10 +38,10 @@ public interface ICachew
     /// <param name="factory">Produces the value on a miss.</param>
     /// <param name="options">Per entry overrides. Unset members fall back to the configured defaults.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
-    Task<T> GetOrCreateAsync<T>(string key, Func<CancellationToken, Task<T>> factory, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default);
+    ValueTask<T> GetOrCreateAsync<T>(string key, Func<CancellationToken, Task<T>> factory, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>Removes a value from both layers.</summary>
     /// <param name="key">The cache key.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
-    Task RemoveAsync(string key, CancellationToken cancellationToken = default);
+    ValueTask RemoveAsync(string key, CancellationToken cancellationToken = default);
 }

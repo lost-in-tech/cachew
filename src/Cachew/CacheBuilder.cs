@@ -80,7 +80,7 @@ public sealed class CacheBuilder<T>
     /// <summary>Gets the value, producing and caching it on a miss.</summary>
     /// <param name="key">The cache key.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
-    public Task<T> GetAsync(string key, CancellationToken cancellationToken = default)
+    public ValueTask<T> GetAsync(string key, CancellationToken cancellationToken = default)
     {
         var options = _shouldCache is null && _inMemoryTimeToLive is null && _distributedTimeToLive is null
             ? null

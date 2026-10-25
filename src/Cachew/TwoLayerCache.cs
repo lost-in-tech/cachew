@@ -43,7 +43,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
 
     public void Dispose() => _subscription.Dispose();
 
-    public async Task<T?> GetAsync<T>(string key, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default)
+    public async ValueTask<T?> GetAsync<T>(string key, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
@@ -51,14 +51,14 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
         return value;
     }
 
-    public async Task SetAsync<T>(string key, T value, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default)
+    public async ValueTask SetAsync<T>(string key, T value, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         await SetCoreAsync(BuildKey(key), value, options, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<T> GetOrCreateAsync<T>(string key, Func<CancellationToken, Task<T>> factory, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default)
+    public async ValueTask<T> GetOrCreateAsync<T>(string key, Func<CancellationToken, Task<T>> factory, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(factory);
@@ -92,7 +92,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
         }
     }
 
-    public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
+    public async ValueTask RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
@@ -191,7 +191,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
         await PublishAsync(cacheKey).ConfigureAwait(false);
     }
 
-    private async Task<(bool Found, T? Value)> TryGetAsync<T>(string cacheKey, CacheEntryOptions<T>? options, CancellationToken cancellationToken)
+    private async ValueTask<(bool Found, T? Value)> TryGetAsync<T>(string cacheKey, CacheEntryOptions<T>? options, CancellationToken cancellationToken)
     {
         var inMemoryTtl = InMemoryTimeToLive(options);
         var distributedTtl = DistributedTimeToLive(options);
