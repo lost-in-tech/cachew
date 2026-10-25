@@ -816,6 +816,23 @@ public class TwoLayerCacheTests
         return new TwoLayerCache(memory, distributed, Options.Create(options ?? DefaultOptions), backplane: backplane);
     }
 
+    [Fact]
+    public async Task ASizeLimitedMemoryCacheEvictsOnceTheLimitIsReached()
+    {
+        var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 2 });
+        var cache = new TwoLayerCache(memory, CreateDistributedCache(), Options.Create(DefaultOptions));
+
+        for (var i = 0; i < 5; i++)
+        {
+            await cache.SetAsync($"key{i}", i);
+        }
+
+        var remaining = Enumerable.Range(0, 5).Count(i => memory.TryGetValue(DefaultOptions.KeyPrefix + "key" + i, out _));
+
+        // The limit is enforced, which it can be because the cache sizes every entry as one.
+        Assert.True(remaining <= 2, $"expected at most 2 of 5 entries to remain, found {remaining}");
+    }
+
     private static ICachew CreateCache(IDistributedCache distributed)
         => new TwoLayerCache(new MemoryCache(new MemoryCacheOptions()), distributed, Options.Create(DefaultOptions));
 

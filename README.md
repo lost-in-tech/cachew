@@ -88,6 +88,17 @@ into memory expires after the effective in-memory time to live.
 `KeyPrefix` or `SerializerOptions` fails at construction rather than silently misbehaving. Options
 are read once at startup, so changing them at runtime has no effect.
 
+To bound the memory layer, register a sized cache before `AddCachew`:
+
+```csharp
+builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000); // entries, not bytes
+builder.Services.AddCachew();
+```
+
+Entries are sized as one, so the limit counts entries and the cache can evict to stay under it. Without
+a limit, memory grows with time to live times arrival rate, so a time to live set longer than intended
+becomes a memory problem rather than a slow cache.
+
 ## Turning the cache off
 
 `CachewOptions.Enabled` defaults to `true`. Setting it to `false` turns the cache off: nothing is
@@ -142,7 +153,9 @@ builder.Services.WithBackplane();    // optional: enable cross instance invalida
 ```
 
 Notifications are published when a value is cached and when a key is removed, because both change what
-the other instances are holding. They are best effort, on the same terms as everything else here:
+the other instances are holding. That is one message per write and per remove, which is why the whole
+backplane is opt in: enabling it is the decision that accepts that traffic, and not enabling it costs
+nothing. They are best effort, on the same terms as everything else here:
 
 - An instance that misses a notification, or that was restarting at the time, keeps its stale copy
   until that copy expires. The worst case is therefore the behaviour without a backplane at all; the
