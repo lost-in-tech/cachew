@@ -250,7 +250,7 @@ public sealed class CachewEndToEndTests
         var builder = cache
             .OnCacheMiss(_ => Task.FromResult(++calls))
             .CacheIf(value => value > 0)
-            .Duration(inMemorySeconds: 30, distributedSeconds: 60);
+            .ExpireIn(inMemorySeconds: 30, distributedSeconds: 60);
 
         Assert.Equal(1, await builder.GetAsync(key));
         Assert.Equal(1, await builder.GetAsync(key));

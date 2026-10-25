@@ -69,7 +69,7 @@ void Check(bool ok, string what)
     var fluent = await cache
         .OnCacheMiss(_ => Task.FromResult("built"))
         .CacheIf(value => value is not null)
-        .Duration(inMemorySeconds: 30, distributedSeconds: 60)
+        .ExpireIn(inMemorySeconds: 30, distributedSeconds: 60)
         .GetAsync("fluent");
     Check(fluent == "built" && await cache.GetAsync<string>("fluent") == "built", "the fluent API works");
 
