@@ -8,7 +8,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">0.0.1</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">0.0.2</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">beta02</VersionSuffix>
   </PropertyGroup>
 
