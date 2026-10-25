@@ -7,6 +7,8 @@
       "release-type": "simple",
       "versioning": "prerelease",
       "prerelease": true,
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         {
           "type": "xml",
