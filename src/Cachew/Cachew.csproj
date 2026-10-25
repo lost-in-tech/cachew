@@ -3,6 +3,7 @@
   <PropertyGroup>
     <RootNamespace>Cachew</RootNamespace>
     <PackageId>LostInTech.Cachew</PackageId>
+    <Authors>Mohammad Ruhul Amin</Authors>
     <Description>Two layer (in-memory + distributed) caching for .NET.</Description>
     <PackageTags>cache;caching;distributed;redis;memorycache;two-layer</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
