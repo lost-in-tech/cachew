@@ -11,10 +11,11 @@ namespace Cachew.Redis;
 /// used by <see cref="RedisDistributedCache"/>.
 /// </summary>
 /// <remarks>
-/// Delivery is best effort. A message that is lost, or published while an instance is
-/// reconnecting, leaves that instance with a stale in-memory entry until the entry expires, which is
-/// the behaviour without a backplane. Messages published before an instance subscribes are not
-/// replayed.
+/// Delivery is best effort. A message that is lost, or published while an instance is not subscribed,
+/// leaves that instance with a stale in-memory entry until the entry expires, which is the behaviour
+/// without a backplane. Messages published before an instance subscribes are not replayed. Whether a
+/// subscription comes back after the connection drops is not verified, so check that invalidations
+/// still arrive after any disruption to Redis.
 /// </remarks>
 public sealed class RedisCacheBackplane : ICachewBackplane, IDisposable
 {
