@@ -16,7 +16,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     env:
-      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+      NUGETKEY: ${{ secrets.NUGETKEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,8 +26,8 @@ jobs:
 
       - name: Verify the NuGet API key is present
         run: |
-          if [[ -z "$NUGET_API_KEY" ]]; then
-            echo "::error::NUGET_API_KEY is not set, so this release would publish nothing. Add the repository secret and run again."
+          if [[ -z "$NUGETKEY" ]]; then
+            echo "::error::The NUGETKEY secret is not available to this repository, so this release would publish nothing. Grant the organisation secret to this repository, then run again."
             exit 1
           fi
 
@@ -53,7 +53,7 @@ jobs:
         run: dotnet pack cachew.slnx --configuration Release --no-build -p:Version=${{ steps.version.outputs.value }} --output artifacts
 
       - name: Push to NuGet.org
-        run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGETKEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
