@@ -57,7 +57,7 @@ public sealed class RedisDistributedCacheIntegrationTests
 
         await _cache.SetAsync("cachew:round-trip", payload, Expiring());
 
-        await Eventually(() => Task.FromResult(_database.KeyExists("cachew:round-trip")));
+        await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("cachew:round-trip")));
         Assert.Equal(payload, await _cache.GetAsync("cachew:round-trip"));
     }
 
@@ -66,7 +66,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     {
         await _cache.SetAsync("cachew:expiry", [9], Expiring());
 
-        await Eventually(() => Task.FromResult(_database.KeyTimeToLive("cachew:expiry") is not null));
+        await TestWait.Eventually(() => Task.FromResult(_database.KeyTimeToLive("cachew:expiry") is not null));
 
         var timeToLive = _database.KeyTimeToLive("cachew:expiry");
         Assert.NotNull(timeToLive);
@@ -78,7 +78,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     {
         await _cache.SetAsync("cachew:persistent", [5], new DistributedCacheEntryOptions());
 
-        await Eventually(() => Task.FromResult(_database.KeyExists("cachew:persistent")));
+        await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("cachew:persistent")));
 
         // PTTL is -1 for a key with no expiry. StackExchange.Redis maps that to null, the same as a
         // missing key, so ask Redis directly.
@@ -89,11 +89,11 @@ public sealed class RedisDistributedCacheIntegrationTests
     public async Task RemoveAsync_DeletesTheKey()
     {
         await _cache.SetAsync("cachew:remove", [7], Expiring());
-        await Eventually(() => Task.FromResult(_database.KeyExists("cachew:remove")));
+        await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("cachew:remove")));
 
         await _cache.RemoveAsync("cachew:remove");
 
-        await Eventually(() => Task.FromResult(!_database.KeyExists("cachew:remove")));
+        await TestWait.Eventually(() => Task.FromResult(!_database.KeyExists("cachew:remove")));
         Assert.Null(await _cache.GetAsync("cachew:remove"));
     }
 
@@ -111,7 +111,7 @@ public sealed class RedisDistributedCacheIntegrationTests
             [1],
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMilliseconds(200) });
 
-        await Eventually(() => Task.FromResult(!_database.KeyExists("cachew:short")));
+        await TestWait.Eventually(() => Task.FromResult(!_database.KeyExists("cachew:short")));
         Assert.Null(await _cache.GetAsync("cachew:short"));
     }
 
@@ -127,7 +127,7 @@ public sealed class RedisDistributedCacheIntegrationTests
 
         await cache.SetAsync("order:1", "value");
 
-        await Eventually(async () => (await cache.GetAsync<string>("order:1")) is not null);
+        await TestWait.Eventually(async () => (await cache.GetAsync<string>("order:1")) is not null);
         Assert.Equal("value", await cache.GetAsync<string>("order:1"));
     }
 
@@ -135,14 +135,14 @@ public sealed class RedisDistributedCacheIntegrationTests
     public async Task SyncMembers_RoundTripAgainstRedis()
     {
         _cache.Set("cachew:sync", [1, 2, 3], Expiring());
-        await Eventually(() => Task.FromResult(_database.KeyExists("cachew:sync")));
+        await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("cachew:sync")));
 
         _cache.Refresh("cachew:sync");
         Assert.Equal(new byte[] { 1, 2, 3 }, _cache.Get("cachew:sync"));
         Assert.Null(_cache.Get("cachew:not-there"));
 
         _cache.Remove("cachew:sync");
-        await Eventually(() => Task.FromResult(!_database.KeyExists("cachew:sync")));
+        await TestWait.Eventually(() => Task.FromResult(!_database.KeyExists("cachew:sync")));
         Assert.Null(_cache.Get("cachew:sync"));
     }
 
@@ -174,7 +174,7 @@ public sealed class RedisDistributedCacheIntegrationTests
 
         await cache.SetAsync("cachew:di", [4], Expiring());
 
-        await Eventually(() => Task.FromResult(_database.KeyExists("cachew:di")));
+        await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("cachew:di")));
         Assert.Equal(new byte[] { 4 }, await cache.GetAsync("cachew:di"));
     }
 
@@ -183,7 +183,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     {
         _cache.Set("cachew:sync-persistent", [5], new DistributedCacheEntryOptions());
 
-        await Eventually(() => Task.FromResult(_database.KeyExists("cachew:sync-persistent")));
+        await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("cachew:sync-persistent")));
 
         Assert.Equal(-1, (long)_database.Execute("PTTL", "cachew:sync-persistent"));
     }
@@ -198,25 +198,10 @@ public sealed class RedisDistributedCacheIntegrationTests
 
         await cache.SetAsync("cachew:di-defaults", [6], Expiring());
 
-        await Eventually(() => Task.FromResult(_database.KeyExists("cachew:di-defaults")));
+        await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("cachew:di-defaults")));
     }
 
     private static DistributedCacheEntryOptions Expiring()
         => new() { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1) };
 
-    private static async Task Eventually(Func<Task<bool>> condition)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(15);
-        while (DateTime.UtcNow < deadline)
-        {
-            if (await condition())
-            {
-                return;
-            }
-
-            await Task.Delay(50);
-        }
-
-        throw new XunitException("The condition was not satisfied in time.");
-    }
 }

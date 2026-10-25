@@ -590,6 +590,114 @@ public class TwoLayerCacheTests
         Assert.Equal(SerializedStatus.Inactive, await cache.GetAsync<SerializedStatus>("key"));
     }
 
+    [Fact]
+    public async Task SetAsync_WithABackplane_PublishesTheInvalidatedKey()
+    {
+        var backplane = new FakeBackplane();
+        var cache = CreateCache(CreateDistributedCache(), backplane, out _);
+
+        await cache.SetAsync("key", "value");
+
+        Assert.Equal(DefaultOptions.KeyPrefix + "key", Assert.Single(backplane.Published));
+    }
+
+    [Fact]
+    public async Task GetOrCreateAsync_WithABackplane_PublishesTheFilledKey()
+    {
+        var backplane = new FakeBackplane();
+        var cache = CreateCache(CreateDistributedCache(), backplane, out _);
+        var calls = 0;
+
+        await cache.GetOrCreateAsync("key", _ => Task.FromResult(++calls));
+
+        Assert.Equal(DefaultOptions.KeyPrefix + "key", Assert.Single(backplane.Published));
+    }
+
+    [Fact]
+    public async Task RemoveAsync_WithABackplane_PublishesTheInvalidatedKey()
+    {
+        var backplane = new FakeBackplane();
+        var cache = CreateCache(CreateDistributedCache(), backplane, out _);
+
+        await cache.RemoveAsync("key");
+
+        Assert.Equal(DefaultOptions.KeyPrefix + "key", Assert.Single(backplane.Published));
+    }
+
+    [Fact]
+    public async Task InvalidationFromAnotherInstance_EvictsTheMemoryLayer()
+    {
+        var backplane = new FakeBackplane();
+        var cache = CreateCache(CreateDistributedCache(), backplane, out var memory);
+        var cacheKey = DefaultOptions.KeyPrefix + "key";
+
+        await cache.SetAsync("key", "value");
+        Assert.True(memory.TryGetValue(cacheKey, out _));
+
+        backplane.Raise(cacheKey);
+
+        Assert.False(memory.TryGetValue(cacheKey, out _));
+    }
+
+    [Fact]
+    public async Task InvalidationFromAnotherInstance_LeavesTheDistributedLayerAlone()
+    {
+        var backplane = new FakeBackplane();
+        var distributed = CreateDistributedCache();
+        var cache = CreateCache(distributed, backplane, out _);
+        var cacheKey = DefaultOptions.KeyPrefix + "key";
+
+        await cache.SetAsync("key", "value");
+
+        backplane.Raise(cacheKey);
+
+        Assert.NotNull(await distributed.GetAsync(cacheKey));
+    }
+
+    [Fact]
+    public async Task WhenTheMemoryLayerIsDisabled_NothingIsPublished()
+    {
+        var backplane = new FakeBackplane();
+        var options = new CachewOptions { DefaultInMemoryTimeToLive = TimeSpan.Zero };
+        var cache = CreateCache(CreateDistributedCache(), backplane, out _, options);
+
+        await cache.SetAsync("key", "value");
+        await cache.RemoveAsync("key");
+
+        Assert.Empty(backplane.Published);
+    }
+
+    [Fact]
+    public void DisposingTheCache_UnsubscribesFromTheBackplane()
+    {
+        var backplane = new FakeBackplane();
+        var cache = CreateCache(CreateDistributedCache(), backplane, out _);
+        Assert.True(backplane.IsSubscribed);
+
+        ((IDisposable)cache).Dispose();
+
+        Assert.False(backplane.IsSubscribed);
+    }
+
+    [Fact]
+    public async Task WhenTheBackplaneThrows_TheWriteStillSucceeds()
+    {
+        var backplane = new FakeBackplane(new InvalidOperationException("the backplane is unavailable."));
+        var cache = CreateCache(CreateDistributedCache(), backplane, out _);
+
+        await cache.SetAsync("key", "value");
+        Assert.Equal("value", await cache.GetAsync<string>("key"));
+
+        await cache.RemoveAsync("key");
+        Assert.Null(await cache.GetAsync<string>("key"));
+    }
+
+    private static ICachew CreateCache(IDistributedCache distributed, ICachewBackplane backplane, out IMemoryCache memory, CachewOptions? options = null)
+    {
+        memory = new MemoryCache(new MemoryCacheOptions());
+        return new TwoLayerCache(memory, distributed, Options.Create(options ?? DefaultOptions), backplane: backplane);
+    }
+
     private static ICachew CreateCache(IDistributedCache distributed)
         => new TwoLayerCache(new MemoryCache(new MemoryCacheOptions()), distributed, Options.Create(DefaultOptions));
 

@@ -101,14 +101,34 @@ can serve a stale value until it expires.
 
 ## Invalidation across instances
 
-`RemoveAsync` clears the in-memory layer of the instance that calls it, and the shared distributed
-layer. It does not tell the other instances anything, so each of them keeps serving its own
-in-memory copy until it expires, which is up to that instance's in-memory time to live, one minute
-by default. Only those local copies lag; the distributed layer is correct as soon as the call
-returns.
+Each instance has its own in-memory layer, so by default a change on one instance is invisible to the
+others until their copies expire, which is up to their in-memory time to live, one minute by default.
+`Cachew.Redis` closes that gap with a backplane: invalidating a key publishes it over Redis pub/sub and
+every other instance drops its own copy straight away.
 
-There is no pub/sub invalidation. To narrow the window, keep `DefaultInMemoryTimeToLive` short for
-values that change often, or bypass the in-memory layer for a key by passing
+```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+builder.Services.AddCachewRedis();   // uses the registered multiplexer
+builder.Services.AddCachew();
+builder.Services.WithBackplane();    // optional: enable cross instance invalidation
+```
+
+Notifications are published when a value is cached and when a key is removed, because both change what
+the other instances are holding. They are best effort, on the same terms as everything else here:
+
+- An instance that misses a notification, or that was restarting at the time, keeps its stale copy
+  until that copy expires. The worst case is therefore the behaviour without a backplane at all; the
+  normal case is that the other instances are correct immediately. Messages are not replayed, so an
+  instance only sees what is published after it subscribes.
+- A notification can arrive before the write that caused it has reached Redis, because writes are
+  fire-and-forget. The instance that receives it may then read the previous value and cache that
+  again, so an invalidation can extend staleness rather than end it. Same bound: the in-memory time to
+  live.
+- Evicting a key that is not there does nothing, so sharing a channel with an unrelated application is
+  harmless. Instances that must see each other have to pass the same `channel` to `WithBackplane`.
+
+If none of that is good enough for particular data, keep `DefaultInMemoryTimeToLive` short for values
+that change often, or bypass the in-memory layer for a key by passing
 `InMemoryTimeToLive = TimeSpan.Zero` on both the write and the read, so every read goes to the
 distributed layer.
 
@@ -186,7 +206,9 @@ builder.Services.AddCachewRedis(sp => myConnection);                      // sha
 The parameterless overload reads `ConnectionStrings:Cachew` (see
 `ServiceCollectionExtensions.DefaultConnectionStringName`); an `IConnectionMultiplexer` that is
 already registered is used instead. The configuration overload is given the `IConfiguration` from
-the container, so the connection string can be read from any section. The multiplexer is registered
+the container, so the connection string can be read from any section. `WithBackplane` adds cross
+instance invalidation over the same connection; see
+[Invalidation across instances](#invalidation-across-instances). The multiplexer is registered
 as a singleton with `TryAdd`, so the first registration wins.
 
 Write semantics:

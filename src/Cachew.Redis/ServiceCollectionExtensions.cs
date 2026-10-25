@@ -2,6 +2,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Cachew.Redis;
@@ -84,6 +85,32 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton(connectionFactory);
         return AddDistributedCache(services);
+    }
+
+    /// <summary>
+    /// Registers a Redis pub/sub backplane, so that invalidating a key on one instance also drops the
+    /// in-memory copy held by the other instances.
+    /// </summary>
+    /// <remarks>
+    /// Notifications are best effort: an instance that misses one stays stale until its entry
+    /// expires. Requires an <see cref="IConnectionMultiplexer"/>, which
+    /// <see cref="AddCachewRedis(IServiceCollection, string, Action{ConfigurationOptions}?)"/> and the
+    /// other <c>AddCachewRedis</c> overloads register. A backplane that is already registered is kept,
+    /// so a custom <see cref="ICachewBackplane"/> wins.
+    /// </remarks>
+    /// <param name="services">The service collection.</param>
+    /// <param name="channel">The pub/sub channel every instance must agree on.</param>
+    public static IServiceCollection WithBackplane(this IServiceCollection services, string channel = RedisCacheBackplane.DefaultChannel)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrEmpty(channel);
+
+        services.TryAddSingleton<ICachewBackplane>(provider => new RedisCacheBackplane(
+            provider.GetRequiredService<IConnectionMultiplexer>(),
+            channel,
+            provider.GetService<ILogger<RedisCacheBackplane>>()));
+
+        return services;
     }
 
     private static IServiceCollection AddDistributedCache(IServiceCollection services)

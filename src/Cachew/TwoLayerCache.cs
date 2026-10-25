@@ -7,15 +7,22 @@ using Microsoft.Extensions.Options;
 
 namespace Cachew;
 
-internal sealed class TwoLayerCache : ICachew
+internal sealed class TwoLayerCache : ICachew, IDisposable
 {
     private readonly IMemoryCache _memoryCache;
     private readonly IDistributedCache _distributedCache;
     private readonly CachewOptions _options;
     private readonly ILogger<TwoLayerCache>? _logger;
+    private readonly ICachewBackplane? _backplane;
+    private readonly IDisposable? _subscription;
     private readonly ConcurrentDictionary<string, Task> _inFlight = new();
 
-    public TwoLayerCache(IMemoryCache memoryCache, IDistributedCache distributedCache, IOptions<CachewOptions> options, ILogger<TwoLayerCache>? logger = null)
+    public TwoLayerCache(
+        IMemoryCache memoryCache,
+        IDistributedCache distributedCache,
+        IOptions<CachewOptions> options,
+        ILogger<TwoLayerCache>? logger = null,
+        ICachewBackplane? backplane = null)
     {
         ArgumentNullException.ThrowIfNull(memoryCache);
         ArgumentNullException.ThrowIfNull(distributedCache);
@@ -25,10 +32,15 @@ internal sealed class TwoLayerCache : ICachew
         _distributedCache = distributedCache;
         _options = options.Value;
         _logger = logger;
+        _backplane = backplane;
 
         ArgumentNullException.ThrowIfNull(_options.KeyPrefix);
         ArgumentNullException.ThrowIfNull(_options.SerializerOptions);
+
+        _subscription = backplane?.Subscribe(EvictLocal);
     }
+
+    public void Dispose() => _subscription?.Dispose();
 
     public async Task<T?> GetAsync<T>(string key, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default)
     {
@@ -102,6 +114,8 @@ internal sealed class TwoLayerCache : ICachew
                 // and the in-memory layer has already been cleared.
             }
         }
+
+        Publish(cacheKey);
     }
 
     private async Task RunFactoryAsync<T>(string cacheKey, CacheEntryOptions<T>? options, Func<CancellationToken, Task<T>> factory, TaskCompletionSource<T> completion)
@@ -161,6 +175,7 @@ internal sealed class TwoLayerCache : ICachew
                 SetInMemory(cacheKey, envelope, inMemoryTtl);
             }
 
+            Publish(cacheKey);
             return;
         }
 
@@ -168,6 +183,8 @@ internal sealed class TwoLayerCache : ICachew
         {
             SetInMemory(cacheKey, new CacheEnvelope<T>(value, null), inMemoryTtl);
         }
+
+        Publish(cacheKey);
     }
 
     private async Task<(bool Found, T? Value)> TryGetAsync<T>(string cacheKey, CacheEntryOptions<T>? options, CancellationToken cancellationToken)
@@ -224,6 +241,28 @@ internal sealed class TwoLayerCache : ICachew
     }
 
     private string BuildKey(string key) => string.Concat(_options.KeyPrefix, key);
+
+    private void EvictLocal(string cacheKey) => _memoryCache.Remove(cacheKey);
+
+    private void Publish(string cacheKey)
+    {
+        // Nothing to evict anywhere when there is no backplane, or when no instance keeps an
+        // in-memory layer at all.
+        if (_backplane is null || _options.DefaultInMemoryTimeToLive <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        try
+        {
+            _backplane.Publish(cacheKey);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Best effort, like the distributed layer: a missed notification only means another
+            // instance keeps a stale copy until that entry expires.
+        }
+    }
 
     private void SetInMemory<T>(string cacheKey, CacheEnvelope<T> envelope, TimeSpan ttl)
     {
