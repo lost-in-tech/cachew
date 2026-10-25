@@ -126,6 +126,14 @@ old keyspace ages out on its own, and rolling back just means reading `v1` again
 configuration edit rather than a code change. One key means one type: if a value's type changes,
 change the key with it.
 
+The payload is JSON written with `CachewOptions.SerializerOptions`. It starts from the web defaults
+(camel case property names, case insensitive reads, numbers readable from strings) plus two choices:
+nulls are not written, and enums are written as their names rather than numbers, so reordering enum
+members cannot silently reinterpret an entry that is already cached. Reads remain compatible with
+payloads written before those two choices, because a missing property deserializes to its default
+and enum numbers are still accepted. Changing the serializer changes the format, so treat that like
+any other payload change and bump the key.
+
 If a payload does not fit the type being read, deserialization fails. That entry is treated as a
 cache miss and a warning is logged through `ILogger<TwoLayerCache>` when logging is registered, so
 the caller still gets a value from the factory and the next write replaces the entry with the

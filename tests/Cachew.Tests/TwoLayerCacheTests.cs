@@ -556,6 +556,40 @@ public class TwoLayerCacheTests
         Assert.Equal(1, calls);
     }
 
+    [Fact]
+    public async Task SerializerDefaults_WriteCamelCase_IgnoreNulls_AndStringEnums()
+    {
+        var distributed = CreateDistributedCache();
+        var writer = CreateCache(distributed);
+
+        // A separate reader, so the value comes back through the payload rather than the memory layer.
+        var reader = CreateCache(distributed);
+        var payload = new SerializedPayload(1, null, SerializedStatus.Inactive);
+
+        await writer.SetAsync("key", payload);
+
+        var raw = await distributed.GetAsync(DefaultOptions.KeyPrefix + "key");
+        var json = Encoding.UTF8.GetString(raw!);
+        Assert.Contains("\"id\":1", json);
+        Assert.DoesNotContain("\"name\"", json);
+        Assert.Contains("\"status\":\"Inactive\"", json);
+
+        Assert.Equal(payload, await reader.GetAsync<SerializedPayload>("key"));
+    }
+
+    [Fact]
+    public async Task NumericEnumPayload_WrittenBeforeStringEnums_StillReads()
+    {
+        var distributed = CreateDistributedCache();
+        await distributed.SetAsync(
+            DefaultOptions.KeyPrefix + "key",
+            Encoding.UTF8.GetBytes("{\"value\":1,\"expiresAtUtc\":\"2099-01-01T00:00:00+00:00\"}"),
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) });
+        var cache = CreateCache(distributed);
+
+        Assert.Equal(SerializedStatus.Inactive, await cache.GetAsync<SerializedStatus>("key"));
+    }
+
     private static ICachew CreateCache(IDistributedCache distributed)
         => new TwoLayerCache(new MemoryCache(new MemoryCacheOptions()), distributed, Options.Create(DefaultOptions));
 
@@ -576,4 +610,12 @@ public class TwoLayerCacheTests
         => new(Options.Create(new MemoryDistributedCacheOptions()));
 
     public sealed record Payload(int Id, string Name);
+
+    public sealed record SerializedPayload(int Id, string? Name, SerializedStatus Status);
+
+    public enum SerializedStatus
+    {
+        Active,
+        Inactive,
+    }
 }
