@@ -49,36 +49,36 @@ public class CacheBuilderTests
     }
 
     [Fact]
-    public async Task Duration_WithZeroDistributedSeconds_DoesNotUseDistributedLayer()
+    public async Task ExpireIn_WithZeroDistributedSeconds_DoesNotUseDistributedLayer()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out _);
 
-        await cache.OnCacheMiss(_ => Task.FromResult("value")).Duration(30, 0).GetAsync("key");
+        await cache.OnCacheMiss(_ => Task.FromResult("value")).ExpireIn(30, 0).GetAsync("key");
 
         Assert.Null(await distributed.GetAsync(DefaultOptions.KeyPrefix + "key"));
         Assert.Equal("value", await cache.GetAsync<string>("key"));
     }
 
     [Fact]
-    public async Task Duration_WithZeroInMemorySeconds_DoesNotUseMemoryLayer()
+    public async Task ExpireIn_WithZeroInMemorySeconds_DoesNotUseMemoryLayer()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out var memory);
 
-        await cache.OnCacheMiss(_ => Task.FromResult("value")).Duration(0, 60).GetAsync("key");
+        await cache.OnCacheMiss(_ => Task.FromResult("value")).ExpireIn(0, 60).GetAsync("key");
 
         Assert.False(memory.TryGetValue(DefaultOptions.KeyPrefix + "key", out _));
         Assert.NotNull(await distributed.GetAsync(DefaultOptions.KeyPrefix + "key"));
     }
 
     [Fact]
-    public async Task Duration_SetsDistributedExpiry()
+    public async Task ExpireIn_SetsDistributedExpiry()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out _);
         var before = DateTimeOffset.UtcNow;
 
         await cache
             .OnCacheMiss(_ => Task.FromResult("value"))
-            .Duration(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60))
+            .ExpireIn(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60))
             .GetAsync("key");
 
         var payload = await distributed.GetAsync(DefaultOptions.KeyPrefix + "key");
@@ -103,13 +103,13 @@ public class CacheBuilderTests
     }
 
     [Fact]
-    public async Task Duration_WithNulls_UsesTheConfiguredDefaults()
+    public async Task ExpireIn_WithNulls_UsesTheConfiguredDefaults()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out _);
 
         await cache
             .OnCacheMiss(_ => Task.FromResult("value"))
-            .Duration(inMemorySeconds: null, distributedSeconds: null)
+            .ExpireIn(inMemorySeconds: null, distributedSeconds: null)
             .GetAsync("key");
 
         Assert.NotNull(await distributed.GetAsync(DefaultOptions.KeyPrefix + "key"));

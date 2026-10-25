@@ -57,7 +57,7 @@ public sealed class CacheBuilder<T>
     /// </summary>
     /// <param name="inMemoryTimeToLive">In-memory layer time to live, or null for the default.</param>
     /// <param name="distributedTimeToLive">Distributed layer time to live, or null for the default.</param>
-    public CacheBuilder<T> Duration(TimeSpan? inMemoryTimeToLive, TimeSpan? distributedTimeToLive)
+    public CacheBuilder<T> ExpireIn(TimeSpan? inMemoryTimeToLive, TimeSpan? distributedTimeToLive)
     {
         _inMemoryTimeToLive = inMemoryTimeToLive;
         _distributedTimeToLive = distributedTimeToLive;
@@ -70,7 +70,7 @@ public sealed class CacheBuilder<T>
     /// </summary>
     /// <param name="inMemorySeconds">In-memory layer time to live in seconds, or null for the default.</param>
     /// <param name="distributedSeconds">Distributed layer time to live in seconds, or null for the default.</param>
-    public CacheBuilder<T> Duration(int? inMemorySeconds, int? distributedSeconds)
+    public CacheBuilder<T> ExpireIn(int? inMemorySeconds, int? distributedSeconds)
     {
         _inMemoryTimeToLive = inMemorySeconds is null ? null : TimeSpan.FromSeconds(inMemorySeconds.Value);
         _distributedTimeToLive = distributedSeconds is null ? null : TimeSpan.FromSeconds(distributedSeconds.Value);

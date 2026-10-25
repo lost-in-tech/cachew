@@ -279,11 +279,11 @@ The same policy can be built fluently:
 var product = await cache
     .OnCacheMiss(ct => LoadFromDatabaseAsync(id, ct))
     .CacheIf(product => product is not null)
-    .Duration(inMemorySeconds: 30, distributedSeconds: 300)
+    .ExpireIn(inMemorySeconds: 30, distributedSeconds: 300)
     .GetAsync($"product:{id}", ct);
 ```
 
-`OnCacheMiss` starts the operation, `CacheIf` is optional, and `Duration` takes `TimeSpan` or
+`OnCacheMiss` starts the operation, `CacheIf` is optional, and `ExpireIn` takes `TimeSpan` or
 `int` seconds with the same null-means-default and zero-means-disabled rules as
 `CacheEntryOptions<T>`. The terminal `GetAsync` runs the same coalesced get-or-create. A builder can
 be reused across keys, since configuring it does not consume it.
