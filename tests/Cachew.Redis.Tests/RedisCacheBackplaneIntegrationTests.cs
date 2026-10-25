@@ -33,18 +33,18 @@ public sealed class RedisCacheBackplaneIntegrationTests
         var received = new ConcurrentBag<string>();
         using var subscription = subscriber.Subscribe(received.Add);
 
-        await TestWait.Eventually(() =>
+        await TestWait.Eventually(async () =>
         {
-            publisher.Publish("warmup");
-            return Task.FromResult(received.Contains("warmup"));
+            await publisher.PublishAsync("warmup");
+            return received.Contains("warmup");
         });
 
         // Published in the loop rather than once: delivery is best effort, so a single
         // fire-and-forget publish is not guaranteed to arrive.
-        await TestWait.Eventually(() =>
+        await TestWait.Eventually(async () =>
         {
-            publisher.Publish("cachew:key");
-            return Task.FromResult(received.Contains("cachew:key"));
+            await publisher.PublishAsync("cachew:key");
+            return received.Contains("cachew:key");
         });
     }
 
@@ -61,18 +61,18 @@ public sealed class RedisCacheBackplaneIntegrationTests
 
         // `self` subscribing proves the channel is live, since it is the instance whose messages must
         // not come back to it.
-        await TestWait.Eventually(() =>
+        await TestWait.Eventually(async () =>
         {
-            other.Publish("warmup");
-            return Task.FromResult(selfReceived.Contains("warmup"));
+            await other.PublishAsync("warmup");
+            return selfReceived.Contains("warmup");
         });
 
-        self.Publish("cachew:key");
+        await self.PublishAsync("cachew:key");
 
-        await TestWait.Eventually(() =>
+        await TestWait.Eventually(async () =>
         {
-            self.Publish("cachew:key");
-            return Task.FromResult(otherReceived.Contains("cachew:key"));
+            await self.PublishAsync("cachew:key");
+            return otherReceived.Contains("cachew:key");
         });
 
         Assert.Contains("cachew:key", otherReceived);

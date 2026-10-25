@@ -15,10 +15,11 @@ public interface ICachewBackplane
     /// <summary>
     /// Publishes that <paramref name="key"/> changed, so that other instances drop their in-memory
     /// copy of it. Must not throw: a failure only means an instance keeps a stale copy until it
-    /// expires, and the caller is not expected to handle it.
+    /// expires, and the caller is not expected to handle it. A provider that sends fire-and-forget
+    /// can return a completed value.
     /// </summary>
     /// <param name="key">The cache key, already prefixed.</param>
-    void Publish(string key);
+    ValueTask PublishAsync(string key);
 
     /// <summary>
     /// Registers <paramref name="onInvalidate"/>, invoked with a key that another instance

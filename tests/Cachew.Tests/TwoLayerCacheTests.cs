@@ -683,13 +683,22 @@ public class TwoLayerCacheTests
     public async Task WhenTheBackplaneThrows_TheWriteStillSucceeds()
     {
         var backplane = new FakeBackplane(new InvalidOperationException("the backplane is unavailable."));
-        var cache = CreateCache(CreateDistributedCache(), backplane, out _);
+        var logger = Substitute.For<ILogger<TwoLayerCache>>();
+        var cache = new TwoLayerCache(
+            new MemoryCache(new MemoryCacheOptions()),
+            CreateDistributedCache(),
+            Options.Create(DefaultOptions),
+            logger: logger,
+            backplane: backplane);
 
         await cache.SetAsync("key", "value");
         Assert.Equal("value", await cache.GetAsync<string>("key"));
 
         await cache.RemoveAsync("key");
         Assert.Null(await cache.GetAsync<string>("key"));
+
+        // Both the write and the remove report that the invalidation could not be published.
+        Assert.Equal(2, logger.ReceivedCalls().Count(call => call.GetMethodInfo().Name == "Log"));
     }
 
     [Fact]
@@ -768,6 +777,25 @@ public class TwoLayerCacheTests
         await cache.RemoveAsync("key");
 
         Assert.Empty(backplane.Published);
+    }
+
+    [Fact]
+    public async Task WhenTheDistributedLayerFails_TheFailureIsLogged()
+    {
+        var logger = Substitute.For<ILogger<TwoLayerCache>>();
+        var cache = new TwoLayerCache(
+            new MemoryCache(new MemoryCacheOptions()),
+            new FailingDistributedCache(new CacheUnavailableException()),
+            Options.Create(DefaultOptions),
+            logger);
+
+        await cache.GetAsync<string>("key");
+        await cache.SetAsync("key", "value");
+        await cache.RemoveAsync("key");
+
+        // The read, the write and the remove each report the failure rather than swallowing it
+        // silently, which is what makes an awaited provider worth configuring.
+        Assert.Equal(3, logger.ReceivedCalls().Count(call => call.GetMethodInfo().Name == "Log"));
     }
 
     [Fact]

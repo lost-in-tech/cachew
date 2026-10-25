@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Cachew.Redis;
@@ -27,6 +28,7 @@ public sealed class RedisCacheBackplane : ICachewBackplane, IDisposable
     private readonly ISubscriber _subscriber;
     private readonly RedisChannel _channel;
     private readonly ILogger<RedisCacheBackplane>? _logger;
+    private readonly bool _fireAndForget;
     private readonly string _origin = Guid.NewGuid().ToString("N");
     private readonly List<IDisposable> _subscriptions = [];
     private bool _disposed;
@@ -39,10 +41,12 @@ public sealed class RedisCacheBackplane : ICachewBackplane, IDisposable
     /// there does nothing.
     /// </param>
     /// <param name="logger">Optional logger for unreadable messages.</param>
+    /// <param name="options">Optional options; fire-and-forget notifications unless told otherwise.</param>
     public RedisCacheBackplane(
         IConnectionMultiplexer connection,
         string channel = DefaultChannel,
-        ILogger<RedisCacheBackplane>? logger = null)
+        ILogger<RedisCacheBackplane>? logger = null,
+        IOptions<RedisCachewOptions>? options = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentException.ThrowIfNullOrEmpty(channel);
@@ -50,16 +54,23 @@ public sealed class RedisCacheBackplane : ICachewBackplane, IDisposable
         _subscriber = connection.GetSubscriber();
         _channel = RedisChannel.Literal(channel);
         _logger = logger;
+        _fireAndForget = options?.Value.FireAndForget ?? true;
     }
 
     /// <inheritdoc />
-    public void Publish(string key)
+    public ValueTask PublishAsync(string key)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        var message = new Message(CurrentVersion, _origin, key);
+        var payload = JsonSerializer.Serialize(new Message(CurrentVersion, _origin, key), SerializerOptions);
 
-        _subscriber.Publish(_channel, JsonSerializer.Serialize(message, SerializerOptions), CommandFlags.FireAndForget);
+        if (_fireAndForget)
+        {
+            _subscriber.Publish(_channel, payload, CommandFlags.FireAndForget);
+            return ValueTask.CompletedTask;
+        }
+
+        return new ValueTask(_subscriber.PublishAsync(_channel, payload));
     }
 
     /// <inheritdoc />

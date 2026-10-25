@@ -15,7 +15,7 @@ internal sealed class FakeBackplane : ICachewBackplane
 
     public bool IsSubscribed => _handlers.Count > 0;
 
-    public void Publish(string key)
+    public ValueTask PublishAsync(string key)
     {
         if (_publishFailure is not null)
         {
@@ -23,6 +23,7 @@ internal sealed class FakeBackplane : ICachewBackplane
         }
 
         Published.Add(key);
+        return ValueTask.CompletedTask;
     }
 
     public IDisposable Subscribe(Action<string> onInvalidate)

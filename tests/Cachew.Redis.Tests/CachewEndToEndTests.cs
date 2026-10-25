@@ -350,6 +350,25 @@ public sealed class CachewEndToEndTests
         Assert.False(_database.KeyExists(Prefixed(key)));
     }
 
+    [Fact]
+    public async Task WithFireAndForgetOff_TheWriteIsStoredWhenSetReturns()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(_connection);
+        services.AddCachewRedis();
+        services.Configure<RedisCachewOptions>(options => options.FireAndForget = false);
+        services.AddCachew();
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<ICachew>();
+        const string key = "e2e-awaited";
+
+        await cache.SetAsync(key, "value");
+
+        // No polling: the write waited for Redis, so it is already stored. With the default
+        // fire-and-forget this assertion would be racy, which is why the other tests poll.
+        Assert.True(_database.KeyExists(Prefixed(key)));
+    }
+
     private static string Prefixed(string key) => "cachew:" + key;
 
     private static string Payload(string value) =>

@@ -18,9 +18,7 @@ internal sealed class NullCacheBackplane : ICachewBackplane
     {
     }
 
-    public void Publish(string key)
-    {
-    }
+    public ValueTask PublishAsync(string key) => ValueTask.CompletedTask;
 
     public IDisposable Subscribe(Action<string> onInvalidate)
     {

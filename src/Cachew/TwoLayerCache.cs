@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Cachew;
@@ -12,7 +13,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
     private readonly IMemoryCache _memoryCache;
     private readonly IDistributedCache _distributedCache;
     private readonly CachewOptions _options;
-    private readonly ILogger<TwoLayerCache>? _logger;
+    private readonly ILogger<TwoLayerCache> _logger;
     private readonly ICachewBackplane _backplane;
     private readonly IDisposable _subscription;
     private readonly ConcurrentDictionary<string, Task> _inFlight = new();
@@ -31,7 +32,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
         _memoryCache = memoryCache;
         _distributedCache = distributedCache;
         _options = options.Value;
-        _logger = logger;
+        _logger = logger ?? NullLogger<TwoLayerCache>.Instance;
         _backplane = backplane ?? NullCacheBackplane.Instance;
 
         ArgumentNullException.ThrowIfNull(_options.KeyPrefix);
@@ -110,12 +111,13 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                // The cache is best effort. A distributed layer failure is not the caller's problem,
-                // and the in-memory layer has already been cleared.
+                // Best effort: not the caller's problem, and the in-memory layer is already cleared.
+                // Logged because an awaited provider surfaces failures here rather than swallowing them.
+                _logger.LogWarning(exception, "Could not remove '{CacheKey}' from the distributed layer.", cacheKey);
             }
         }
 
-        Publish(cacheKey);
+        await PublishAsync(cacheKey).ConfigureAwait(false);
     }
 
     private async Task RunFactoryAsync<T>(string cacheKey, CacheEntryOptions<T>? options, Func<CancellationToken, Task<T>> factory, TaskCompletionSource<T> completion)
@@ -165,9 +167,11 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                // The cache is best effort. A distributed layer failure must not fail the caller, and
-                // the value is still cached in memory below. Serialization is outside this guard, so a
-                // value that cannot be serialized still surfaces.
+                // Best effort: not the caller's problem, and the value is still cached in memory below.
+                // Serialization is outside this guard, so a value that cannot be serialized still
+                // surfaces. Logged because an awaited provider surfaces failures here rather than
+                // swallowing them.
+                _logger.LogWarning(exception, "Could not write '{CacheKey}' to the distributed layer.", cacheKey);
             }
 
             if (inMemoryTtl > TimeSpan.Zero)
@@ -175,7 +179,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
                 SetInMemory(cacheKey, envelope, inMemoryTtl);
             }
 
-            Publish(cacheKey);
+            await PublishAsync(cacheKey).ConfigureAwait(false);
             return;
         }
 
@@ -184,7 +188,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
             SetInMemory(cacheKey, new CacheEnvelope<T>(value, null), inMemoryTtl);
         }
 
-        Publish(cacheKey);
+        await PublishAsync(cacheKey).ConfigureAwait(false);
     }
 
     private async Task<(bool Found, T? Value)> TryGetAsync<T>(string cacheKey, CacheEntryOptions<T>? options, CancellationToken cancellationToken)
@@ -209,7 +213,9 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            // The cache is best effort. Treat a distributed layer failure as a miss.
+            // Best effort: treat a distributed layer failure as a miss. Logged because an awaited
+            // provider surfaces failures here rather than swallowing them.
+            _logger.LogWarning(exception, "Could not read '{CacheKey}' from the distributed layer.", cacheKey);
             return (false, default);
         }
 
@@ -256,7 +262,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
 
     private void EvictLocal(string cacheKey) => _memoryCache.Remove(cacheKey);
 
-    private void Publish(string cacheKey)
+    private async Task PublishAsync(string cacheKey)
     {
         // Nothing to evict anywhere when no instance keeps an in-memory layer at all.
         if (!InMemoryEnabled)
@@ -266,12 +272,12 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
 
         try
         {
-            _backplane.Publish(cacheKey);
+            // Costs nothing with a provider that sends fire-and-forget, and waits when it does not.
+            await _backplane.PublishAsync(cacheKey).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            // Best effort, like the distributed layer: a missed notification only means another
-            // instance keeps a stale copy until that entry expires.
+            _logger.LogWarning(exception, "Could not publish an invalidation for '{CacheKey}'.", cacheKey);
         }
     }
 
@@ -300,7 +306,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
             // The payload does not fit the type being read, which means a stale entry from an older
             // shape or one key used with two types. Serve a miss and leave a trail rather than fail
             // the caller; the next write replaces the entry.
-            _logger?.LogWarning(exception, "Cache entry '{CacheKey}' could not be deserialized and is treated as a miss.", cacheKey);
+            _logger.LogWarning(exception, "Cache entry '{CacheKey}' could not be deserialized and is treated as a miss.", cacheKey);
             return null;
         }
     }

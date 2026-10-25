@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Cachew.Redis;
@@ -18,13 +19,16 @@ namespace Cachew.Redis;
 public sealed class RedisDistributedCache : IDistributedCache
 {
     private readonly IDatabase _database;
+    private readonly CommandFlags _flags;
 
     /// <summary>Creates the cache over an existing connection multiplexer.</summary>
     /// <param name="connection">The Redis connection multiplexer to use.</param>
-    public RedisDistributedCache(IConnectionMultiplexer connection)
+    /// <param name="options">Optional options; fire-and-forget writes unless told otherwise.</param>
+    public RedisDistributedCache(IConnectionMultiplexer connection, IOptions<RedisCachewOptions>? options = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         _database = connection.GetDatabase();
+        _flags = (options?.Value.FireAndForget ?? true) ? CommandFlags.FireAndForget : CommandFlags.None;
     }
 
     /// <inheritdoc />
@@ -58,11 +62,11 @@ public sealed class RedisDistributedCache : IDistributedCache
             return;
         }
 
-        _database.StringSet(key, value, expiry, when: When.Always, flags: CommandFlags.FireAndForget);
+        _database.StringSet(key, value, expiry, when: When.Always, flags: _flags);
     }
 
     /// <inheritdoc />
-    public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
+    public async Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(value);
@@ -71,11 +75,12 @@ public sealed class RedisDistributedCache : IDistributedCache
         var expiry = GetExpiry(options);
         if (expiry <= TimeSpan.Zero)
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        _database.StringSetAsync(key, value, expiry, when: When.Always, flags: CommandFlags.FireAndForget);
-        return Task.CompletedTask;
+        // Waiting here costs nothing when the flags ask for fire and forget, because the returned
+        // task is already complete.
+        await _database.StringSetAsync(key, value, expiry, when: When.Always, flags: _flags).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -83,16 +88,15 @@ public sealed class RedisDistributedCache : IDistributedCache
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        _database.KeyDelete(key, CommandFlags.FireAndForget);
+        _database.KeyDelete(key, _flags);
     }
 
     /// <inheritdoc />
-    public Task RemoveAsync(string key, CancellationToken token = default)
+    public async Task RemoveAsync(string key, CancellationToken token = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        _database.KeyDeleteAsync(key, CommandFlags.FireAndForget);
-        return Task.CompletedTask;
+        await _database.KeyDeleteAsync(key, _flags).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

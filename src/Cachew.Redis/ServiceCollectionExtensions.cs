@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Cachew.Redis;
@@ -108,13 +109,15 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ICachewBackplane>(provider => new RedisCacheBackplane(
             provider.GetRequiredService<IConnectionMultiplexer>(),
             channel,
-            provider.GetService<ILogger<RedisCacheBackplane>>()));
+            provider.GetService<ILogger<RedisCacheBackplane>>(),
+            provider.GetService<IOptions<RedisCachewOptions>>()));
 
         return services;
     }
 
     private static IServiceCollection AddDistributedCache(IServiceCollection services)
     {
+        services.AddOptions<RedisCachewOptions>();
         services.TryAddSingleton<IDistributedCache, RedisDistributedCache>();
         return services;
     }

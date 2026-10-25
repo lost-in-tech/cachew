@@ -241,13 +241,36 @@ as a singleton with `TryAdd`, so the first registration wins.
 
 Write semantics:
 
-- Writes (`Set`, `SetAsync`, `Remove`, `RemoveAsync`) are fire-and-forget. They are enqueued when
-  the method returns, but the server reply is not awaited and a write error is not surfaced. Reads
-  are always awaited.
+- Writes (`Set`, `SetAsync`, `Remove`, `RemoveAsync`) and invalidation notifications are
+  fire-and-forget by default. They are enqueued when the method returns, but the server reply is not
+  awaited and a write error is not surfaced. Reads are always awaited.
 - A caller that writes and immediately reads the same key from another process may briefly see the
   previous value or a miss, because the write may not have reached Redis yet.
 - Sliding expiration is not supported and throws `NotSupportedException`. `Refresh` is a no-op.
 - Cancellation tokens are not honoured, because StackExchange.Redis does not accept them.
+
+### Waiting for Redis instead
+
+`RedisCachewOptions.FireAndForget` defaults to `true`. On a cache miss the sequence is read, run the
+factory, then write, so fire-and-forget removes the wait on that last step. Setting it to `false`
+makes writes, removes and invalidations wait for Redis instead. That costs a round trip each time and
+buys observability: failures surface through the cache's logger rather than only meaning that another
+instance stays stale until an entry expires.
+
+```csharp
+builder.Services.AddCachewRedis("localhost:6379");
+builder.Services.Configure<RedisCachewOptions>(o => o.FireAndForget = false);
+```
+
+Because it binds from configuration, it can be turned on without a release:
+
+```csharp
+builder.Services.Configure<RedisCachewOptions>(builder.Configuration.GetSection("Cachew:Redis"));
+```
+
+```json
+{ "Cachew": { "Redis": { "FireAndForget": false } } }
+```
 
 ## Build
 
