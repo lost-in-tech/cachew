@@ -390,6 +390,72 @@ public class TwoLayerCacheTests
         Assert.Equal("value", await cache.GetAsync<string>("key"));
     }
 
+    [Fact]
+    public async Task GetAsync_TreatsExpiredPayloadAsMiss()
+    {
+        var expiredAt = DateTimeOffset.UtcNow.AddMinutes(-1).ToString("O");
+        var distributed = CreateDistributedCache();
+        await distributed.SetAsync(
+            DefaultOptions.KeyPrefix + "key",
+            Encoding.UTF8.GetBytes($"{{\"value\":\"value\",\"expiresAtUtc\":\"{expiredAt}\"}}"),
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) });
+        var cache = CreateCache(distributed);
+
+        Assert.Null(await cache.GetAsync<string>("key"));
+    }
+
+    [Fact]
+    public async Task GetOrCreateAsync_WhenTheFactoryIsCancelled_ThrowsCancellation()
+    {
+        var cache = CreateCache(out _);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // Pins the contract that a cancelled factory surfaces as cancellation rather than as some
+        // other failure. It cannot distinguish the internal cancellation state, because the async
+        // state machine normalises an OperationCanceledException to a cancelled task either way.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => cache.GetOrCreateAsync("key", _ => Task.FromCanceled<int>(cts.Token)));
+    }
+
+    [Fact]
+    public async Task GetAsync_TreatsLiteralJsonNullPayloadAsMiss()
+    {
+        var distributed = CreateDistributedCache();
+        await distributed.SetAsync(
+            DefaultOptions.KeyPrefix + "key",
+            Encoding.UTF8.GetBytes("null"),
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) });
+        var cache = CreateCache(distributed);
+
+        Assert.Null(await cache.GetAsync<string>("key"));
+    }
+
+    [Fact]
+    public async Task GetAsync_PromotedEntry_IsCappedByTheRemainingDistributedLifetime()
+    {
+        var options = new CachewOptions { DefaultInMemoryTimeToLive = TimeSpan.FromSeconds(30) };
+        var distributed = CreateDistributedCache();
+        var writer = CreateCache(distributed);
+        var memory = new MemoryCache(new MemoryCacheOptions());
+        var reader = new TwoLayerCache(memory, distributed, Options.Create(options));
+
+        await writer.SetAsync("key", "value", new CacheEntryOptions<string>
+        {
+            DistributedTimeToLive = TimeSpan.FromMilliseconds(500),
+        });
+
+        // The reader's memory layer is empty, so this read promotes from the distributed layer. The
+        // distributed entry expires well before the 30 second in-memory time to live, so the promoted
+        // entry must be capped at the shorter of the two.
+        Assert.Equal("value", await reader.GetAsync<string>("key"));
+        Assert.True(memory.TryGetValue(options.KeyPrefix + "key", out _));
+
+        await Task.Delay(1000);
+
+        Assert.False(memory.TryGetValue(options.KeyPrefix + "key", out _));
+    }
+
     private static ICachew CreateCache(IDistributedCache distributed)
         => new TwoLayerCache(new MemoryCache(new MemoryCacheOptions()), distributed, Options.Create(DefaultOptions));
 

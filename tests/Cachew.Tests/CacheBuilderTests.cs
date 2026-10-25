@@ -102,6 +102,19 @@ public class CacheBuilderTests
         Assert.Equal(2, calls);
     }
 
+    [Fact]
+    public async Task Duration_WithNulls_UsesTheConfiguredDefaults()
+    {
+        var cache = CreateCache(DefaultOptions, out var distributed, out _);
+
+        await cache
+            .OnCacheMiss(_ => Task.FromResult("value"))
+            .Duration(inMemorySeconds: null, distributedSeconds: null)
+            .GetAsync("key");
+
+        Assert.NotNull(await distributed.GetAsync(DefaultOptions.KeyPrefix + "key"));
+    }
+
     private static ICachew CreateCache(out IDistributedCache distributed)
         => CreateCache(DefaultOptions, out distributed, out _);
 

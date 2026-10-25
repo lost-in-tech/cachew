@@ -12,10 +12,13 @@ public sealed class RedisFixture : IAsyncLifetime
 
     public IConnectionMultiplexer Connection { get; private set; } = null!;
 
+    public string ConnectionString { get; private set; } = null!;
+
     public async Task InitializeAsync()
     {
         await _container.StartAsync();
-        Connection = await ConnectionMultiplexer.ConnectAsync(_container.GetConnectionString());
+        ConnectionString = _container.GetConnectionString();
+        Connection = await ConnectionMultiplexer.ConnectAsync(ConnectionString);
     }
 
     public async Task DisposeAsync()
@@ -35,12 +38,14 @@ public sealed class RedisCollection : ICollectionFixture<RedisFixture>
 public sealed class RedisDistributedCacheIntegrationTests
 {
     private readonly IConnectionMultiplexer _connection;
+    private readonly string _connectionString;
     private readonly IDatabase _database;
     private readonly IDistributedCache _cache;
 
     public RedisDistributedCacheIntegrationTests(RedisFixture fixture)
     {
         _connection = fixture.Connection;
+        _connectionString = fixture.ConnectionString;
         _database = fixture.Connection.GetDatabase();
         _cache = new RedisDistributedCache(fixture.Connection);
     }
@@ -124,6 +129,76 @@ public sealed class RedisDistributedCacheIntegrationTests
 
         await Eventually(async () => (await cache.GetAsync<string>("order:1")) is not null);
         Assert.Equal("value", await cache.GetAsync<string>("order:1"));
+    }
+
+    [Fact]
+    public async Task SyncMembers_RoundTripAgainstRedis()
+    {
+        _cache.Set("cachew:sync", [1, 2, 3], Expiring());
+        await Eventually(() => Task.FromResult(_database.KeyExists("cachew:sync")));
+
+        _cache.Refresh("cachew:sync");
+        Assert.Equal(new byte[] { 1, 2, 3 }, _cache.Get("cachew:sync"));
+        Assert.Null(_cache.Get("cachew:not-there"));
+
+        _cache.Remove("cachew:sync");
+        await Eventually(() => Task.FromResult(!_database.KeyExists("cachew:sync")));
+        Assert.Null(_cache.Get("cachew:sync"));
+    }
+
+    [Fact]
+    public async Task RefreshAsync_IsANoOp()
+    {
+        await _cache.RefreshAsync("cachew:anything");
+        await _cache.RefreshAsync("cachew:anything", CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Set_WithAnElapsedExpiry_DoesNotWrite()
+    {
+        _cache.Set("cachew:elapsed", [1], new DistributedCacheEntryOptions
+        {
+            AbsoluteExpiration = DateTimeOffset.UtcNow.AddMinutes(-1),
+        });
+
+        Assert.False(_database.KeyExists("cachew:elapsed"));
+    }
+
+    [Fact]
+    public async Task AddCachewRedis_WithConnectionString_ConnectsAndCaches()
+    {
+        var services = new ServiceCollection();
+        services.AddCachewRedis(_connectionString, options => options.AbortOnConnectFail = true);
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<IDistributedCache>();
+
+        await cache.SetAsync("cachew:di", [4], Expiring());
+
+        await Eventually(() => Task.FromResult(_database.KeyExists("cachew:di")));
+        Assert.Equal(new byte[] { 4 }, await cache.GetAsync("cachew:di"));
+    }
+
+    [Fact]
+    public async Task Set_WithoutExpiry_LeavesTheKeyPersistent()
+    {
+        _cache.Set("cachew:sync-persistent", [5], new DistributedCacheEntryOptions());
+
+        await Eventually(() => Task.FromResult(_database.KeyExists("cachew:sync-persistent")));
+
+        Assert.Equal(-1, (long)_database.Execute("PTTL", "cachew:sync-persistent"));
+    }
+
+    [Fact]
+    public async Task AddCachewRedis_WithConnectionStringOnly_ConnectsAndCaches()
+    {
+        var services = new ServiceCollection();
+        services.AddCachewRedis(_connectionString);
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<IDistributedCache>();
+
+        await cache.SetAsync("cachew:di-defaults", [6], Expiring());
+
+        await Eventually(() => Task.FromResult(_database.KeyExists("cachew:di-defaults")));
     }
 
     private static DistributedCacheEntryOptions Expiring()
