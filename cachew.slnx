@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Cachew/Cachew.csproj" />
+    <Project Path="src/Cachew.Redis/Cachew.Redis.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Cachew.Tests/Cachew.Tests.csproj" />
+    <Project Path="tests/Cachew.Redis.Tests/Cachew.Redis.Tests.csproj" />
+  </Folder>
+</Solution>
