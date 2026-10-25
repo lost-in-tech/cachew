@@ -13,9 +13,11 @@ namespace Cachew.Redis;
 /// <remarks>
 /// Delivery is best effort. A message that is lost, or published while an instance is not subscribed,
 /// leaves that instance with a stale in-memory entry until the entry expires, which is the behaviour
-/// without a backplane. Messages published before an instance subscribes are not replayed. Whether a
-/// subscription comes back after the connection drops is not verified, so check that invalidations
-/// still arrive after any disruption to Redis.
+/// without a backplane. Messages published before an instance subscribes are not replayed, and a
+/// subscription does come back after the connection drops, because StackExchange.Redis re-establishes
+/// it and restores the channel: verified by killing this connection in a test. A connection that is
+/// closed is noticed at once, while one that goes quiet without closing is noticed when the multiplexer
+/// next probes it, which its <c>KeepAlive</c> setting governs and which defaults to one minute.
 /// </remarks>
 public sealed class RedisCacheBackplane : ICachewBackplane, IDisposable
 {
