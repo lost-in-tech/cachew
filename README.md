@@ -83,24 +83,23 @@ but not cached. Pass the same `CacheEntryOptions<T>` to `GetAsync`, `SetAsync` a
 `GetOrCreateAsync` to keep a key's policy consistent; a value promoted from the distributed layer
 into memory expires after the effective in-memory time to live.
 
-`AddCachew` registers the memory layer for you. It is bounded by default: `CachewOptions.MemoryCacheSizeLimit`
-defaults to 10,000 entries, and entries are sized as one, so the limit counts entries rather than bytes.
-Set it to `null` for no limit, in which case memory grows with the time to live times arrival rate.
+`AddCachew` registers the memory layer for you. It has no size limit by default, so memory is bounded by
+the in-memory time to live times the arrival rate: a time to live set far longer than intended is a
+memory problem rather than simply a slow cache.
+
+To put a hard bound on it, set `CachewOptions.MemoryCacheSizeLimit`. Entries are sized as one, so this
+counts entries rather than bytes, which bounds memory only as far as values are small.
 
 ```csharp
-builder.Services.AddCachew(options => options.MemoryCacheSizeLimit = 50_000);
+builder.Services.AddCachew(options => options.MemoryCacheSizeLimit = 10_000);
 ```
 
-A limit configured directly on `MemoryCacheOptions` wins over that one, whatever order it is registered
-in, because the cache's own configuration is applied after the default:
+A limit configured directly on `MemoryCacheOptions` wins over that one whatever order it is registered
+in, because the library's value only fills in when there is none of its own. When a limit is exceeded
+the cache compacts by `CompactionPercentage`, five percent by default, and a host reacting to real
+memory pressure can call `MemoryCache.Compact` itself.
 
-```csharp
-builder.Services.AddCachew();
-builder.Services.Configure<MemoryCacheOptions>(options => options.SizeLimit = 50_000);
-```
-
-Either way the cache can evict to stay under the limit, so a limit trades hit rate for memory safety. A
-null `KeyPrefix` or `SerializerOptions` fails at construction rather than silently misbehaving, and
+A null `KeyPrefix` or `SerializerOptions` fails at construction rather than silently misbehaving, and
 options are read once at startup, so changing them at runtime has no effect.
 
 ## Turning the cache off

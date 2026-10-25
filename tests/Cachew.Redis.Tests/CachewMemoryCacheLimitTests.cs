@@ -5,18 +5,18 @@ using Microsoft.Extensions.Options;
 namespace Cachew.Redis.Tests;
 
 /// <summary>
-/// The memory layer is bounded by default, and a limit the consumer configures has to win over the
-/// default whatever order the registrations happen in. These live in this project because it is the one
-/// with the dependency injection packages.
+/// The memory layer has no limit unless one is asked for, and a limit configured through
+/// <see cref="MemoryCacheOptions"/> has to win over the library's option whatever order the registrations
+/// happen in. These live in this project because it is the one with the dependency injection packages.
 /// </summary>
 public class CachewMemoryCacheLimitTests
 {
     [Fact]
-    public void TheDefaultLimitIsApplied()
+    public void ThereIsNoLimitByDefault()
     {
         using var provider = Provider(services => services.AddCachew());
 
-        Assert.Equal(10_000L, Limit(provider));
+        Assert.Null(Limit(provider));
     }
 
     [Fact]
@@ -49,14 +49,6 @@ public class CachewMemoryCacheLimitTests
         });
 
         Assert.Equal(2L, Limit(provider));
-    }
-
-    [Fact]
-    public void NoLimitCanBeAskedFor()
-    {
-        using var provider = Provider(services => services.AddCachew(options => options.MemoryCacheSizeLimit = null));
-
-        Assert.Null(Limit(provider));
     }
 
     private static long? Limit(IServiceProvider provider)
