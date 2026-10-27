@@ -11,14 +11,16 @@ public sealed class CacheEntryOptions<T>
     /// <summary>
     /// Time to live in the in-memory layer. Unset falls back to
     /// <see cref="CachewOptions.DefaultInMemoryTimeToLive"/>. Zero or negative means the in-memory layer
-    /// is not used for this entry.
+    /// is not used for this entry. When the default is zero the layer is off for the whole app, so a
+    /// value here cannot switch it on.
     /// </summary>
     public TimeSpan? InMemoryTimeToLive { get; set; }
 
     /// <summary>
     /// Time to live in the distributed layer. Unset falls back to
     /// <see cref="CachewOptions.DefaultDistributedTimeToLive"/>. Zero or negative means the distributed layer
-    /// is not used for this entry.
+    /// is not used for this entry. When the default is zero the layer is off for the whole app, so a
+    /// value here cannot switch it on.
     /// </summary>
     public TimeSpan? DistributedTimeToLive { get; set; }
 

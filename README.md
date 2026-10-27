@@ -23,8 +23,8 @@ of callers runs the factory once.
 
 ## Status
 
-Pre 1.0, so the API may still change. Everything described here is covered by tests, including against
-a real Redis, and the same tests run on every push.
+The API is stable from 1.0 and follows semantic versioning. Everything described here is covered by
+tests, including against a real Redis, and the same tests run on every push.
 
 ## Install
 
