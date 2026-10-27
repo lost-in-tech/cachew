@@ -12,7 +12,7 @@ namespace Cachew.Redis.Tests;
 public class CachewMemoryCacheLimitTests
 {
     [Fact]
-    public void ThereIsNoLimitByDefault()
+    public void There_is_no_memory_limit_by_default()
     {
         using var provider = Provider(services => services.AddCachew());
 
@@ -20,7 +20,7 @@ public class CachewMemoryCacheLimitTests
     }
 
     [Fact]
-    public void ALimitInTheCachewOptionsWins()
+    public void A_limit_in_the_cache_options_is_used()
     {
         using var provider = Provider(services => services.AddCachew(options => options.MemoryCacheSizeLimit = 5));
 
@@ -28,7 +28,7 @@ public class CachewMemoryCacheLimitTests
     }
 
     [Fact]
-    public void ALimitConfiguredOnMemoryCacheOptionsWinsRegisteredBefore()
+    public void A_memory_cache_limit_configured_before_registration_is_used()
     {
         using var provider = Provider(services =>
         {
@@ -40,7 +40,7 @@ public class CachewMemoryCacheLimitTests
     }
 
     [Fact]
-    public void ALimitConfiguredOnMemoryCacheOptionsWinsRegisteredAfter()
+    public void A_memory_cache_limit_configured_after_registration_is_used()
     {
         using var provider = Provider(services =>
         {

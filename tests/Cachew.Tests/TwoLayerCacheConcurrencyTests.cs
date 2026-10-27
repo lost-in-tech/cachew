@@ -15,7 +15,7 @@ public class TwoLayerCacheConcurrencyTests
     private static readonly CachewOptions DefaultOptions = new();
 
     [Fact]
-    public async Task ConcurrentMissesAcrossManyKeys_RunEachFactoryOnce()
+    public async Task Concurrent_misses_across_many_keys_run_each_factory_once()
     {
         var cache = CreateCache(out _);
         var keys = Enumerable.Range(0, 50).Select(index => $"key{index}").ToArray();
@@ -59,7 +59,7 @@ public class TwoLayerCacheConcurrencyTests
     }
 
     [Fact]
-    public async Task MixedOperationsUnderContention_LeaveNothingBehind()
+    public async Task Mixed_operations_under_contention_leave_no_single_flight_traces()
     {
         var cache = CreateCache(out _);
         var keys = Enumerable.Range(0, 20).Select(index => $"mixed{index}").ToArray();
@@ -82,7 +82,7 @@ public class TwoLayerCacheConcurrencyTests
     }
 
     [Fact]
-    public async Task ConcurrentMisses_WithAFailingDistributedLayer_StillProduceValues()
+    public async Task Concurrent_misses_still_produce_values_when_the_distributed_layer_fails()
     {
         var cache = new TwoLayerCache(
             new MemoryCache(new MemoryCacheOptions()),

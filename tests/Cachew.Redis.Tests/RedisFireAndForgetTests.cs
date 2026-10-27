@@ -12,13 +12,13 @@ namespace Cachew.Redis.Tests;
 public class RedisFireAndForgetTests
 {
     [Fact]
-    public void FireAndForgetIsOnByDefault()
+    public void Fire_and_forget_is_on_by_default()
     {
         Assert.True(new RedisCachewOptions().FireAndForget);
     }
 
     [Fact]
-    public async Task ByDefault_AWriteIsSentFireAndForget()
+    public async Task A_write_is_sent_fire_and_forget_by_default()
     {
         var (cache, database) = CreateCache();
 
@@ -29,7 +29,7 @@ public class RedisFireAndForgetTests
     }
 
     [Fact]
-    public async Task ByDefault_ARemoveIsSentFireAndForget()
+    public async Task A_remove_is_sent_fire_and_forget_by_default()
     {
         var (cache, database) = CreateCache();
 
@@ -39,7 +39,7 @@ public class RedisFireAndForgetTests
     }
 
     [Fact]
-    public async Task WhenFireAndForgetIsOff_AWriteWaitsForRedis()
+    public async Task A_write_waits_for_redis_when_fire_and_forget_is_off()
     {
         var database = Substitute.For<IDatabase>();
         var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -57,7 +57,7 @@ public class RedisFireAndForgetTests
     }
 
     [Fact]
-    public async Task WhenFireAndForgetIsOff_ARemoveWaitsForRedis()
+    public async Task A_remove_waits_for_redis_when_fire_and_forget_is_off()
     {
         var database = Substitute.For<IDatabase>();
         var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -74,7 +74,7 @@ public class RedisFireAndForgetTests
     }
 
     [Fact]
-    public async Task ByDefault_AnInvalidationIsPublishedFireAndForget()
+    public async Task An_invalidation_is_published_fire_and_forget_by_default()
     {
         var subscriber = Substitute.For<ISubscriber>();
         var backplane = new RedisCacheBackplane(Connection(subscriber));
@@ -86,7 +86,7 @@ public class RedisFireAndForgetTests
     }
 
     [Fact]
-    public async Task WhenFireAndForgetIsOff_AnInvalidationWaitsForRedis()
+    public async Task An_invalidation_waits_for_redis_when_fire_and_forget_is_off()
     {
         var subscriber = Substitute.For<ISubscriber>();
         var gate = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);

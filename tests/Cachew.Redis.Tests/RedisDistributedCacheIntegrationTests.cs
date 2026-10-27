@@ -58,7 +58,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task SetAsync_ThenGetAsync_RoundTrips()
+    public async Task A_stored_value_round_trips_against_redis()
     {
         var payload = new byte[] { 1, 2, 3 };
 
@@ -69,7 +69,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task SetAsync_AppliesTheExpiry()
+    public async Task A_write_applies_its_expiry_in_redis()
     {
         await _cache.SetAsync("cachew:expiry", [9], Expiring());
 
@@ -81,7 +81,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task SetAsync_WithoutExpiry_LeavesTheKeyPersistent()
+    public async Task A_write_without_an_expiry_leaves_the_key_persistent()
     {
         await _cache.SetAsync("cachew:persistent", [5], new DistributedCacheEntryOptions());
 
@@ -93,7 +93,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task RemoveAsync_DeletesTheKey()
+    public async Task A_remove_deletes_the_key_in_redis()
     {
         await _cache.SetAsync("cachew:remove", [7], Expiring());
         await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("cachew:remove")));
@@ -105,13 +105,13 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task GetAsync_ReturnsNull_WhenTheKeyIsMissing()
+    public async Task A_missing_key_reads_as_nothing_from_redis()
     {
         Assert.Null(await _cache.GetAsync("cachew:missing"));
     }
 
     [Fact]
-    public async Task GetAsync_ReturnsNull_AfterTheEntryExpires()
+    public async Task A_key_reads_as_nothing_after_its_entry_expires()
     {
         await _cache.SetAsync(
             "cachew:short",
@@ -123,7 +123,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task Cache_RoundTripsThroughRealRedis()
+    public async Task The_cache_round_trips_through_real_redis()
     {
         var services = new ServiceCollection();
         services.AddSingleton(_connection);
@@ -139,7 +139,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task SyncMembers_RoundTripAgainstRedis()
+    public async Task The_synchronous_members_round_trip_against_redis()
     {
         _cache.Set("cachew:sync", [1, 2, 3], Expiring());
         await TestWait.Eventually(() => Task.FromResult(_database.KeyExists("cachew:sync")));
@@ -154,14 +154,14 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task RefreshAsync_IsANoOp()
+    public async Task Refresh_is_a_no_op()
     {
         await _cache.RefreshAsync("cachew:anything");
         await _cache.RefreshAsync("cachew:anything", CancellationToken.None);
     }
 
     [Fact]
-    public async Task Set_WithAnElapsedExpiry_DoesNotWrite()
+    public async Task An_expiry_in_the_past_writes_nothing_synchronously()
     {
         _cache.Set("cachew:elapsed", [1], new DistributedCacheEntryOptions
         {
@@ -172,7 +172,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task AddCachewRedis_WithConnectionString_ConnectsAndCaches()
+    public async Task A_connection_string_registration_connects_and_caches()
     {
         var services = new ServiceCollection();
         services.AddCachewRedis(_connectionString, configureConnection: options => options.AbortOnConnectFail = true);
@@ -186,7 +186,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task Set_WithoutExpiry_LeavesTheKeyPersistent()
+    public async Task A_synchronous_write_without_an_expiry_leaves_the_key_persistent()
     {
         _cache.Set("cachew:sync-persistent", [5], new DistributedCacheEntryOptions());
 
@@ -196,7 +196,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task AddCachewRedis_WithConnectionStringFactory_AppliesBothCallbacks()
+    public async Task A_connection_string_factory_registration_applies_both_callbacks()
     {
         var services = new ServiceCollection();
         var configuration = new ConfigurationBuilder()
@@ -224,7 +224,7 @@ public sealed class RedisDistributedCacheIntegrationTests
     }
 
     [Fact]
-    public async Task AddCachewRedis_WithConnectionStringOnly_ConnectsAndCaches()
+    public async Task A_connection_string_registration_alone_connects_and_caches()
     {
         var services = new ServiceCollection();
         services.AddCachewRedis(_connectionString);

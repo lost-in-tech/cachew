@@ -9,7 +9,7 @@ public class RedisDistributedCacheTests
     private static readonly byte[] Payload = [1, 2, 3];
 
     [Fact]
-    public async Task SetAsync_WritesWithExpiry_FireAndForget()
+    public async Task A_write_with_an_expiry_is_sent_fire_and_forget()
     {
         var (cache, database) = CreateCache();
 
@@ -23,7 +23,7 @@ public class RedisDistributedCacheTests
     }
 
     [Fact]
-    public async Task SetAsync_WithoutExpiry_WritesWithoutExpiry_FireAndForget()
+    public async Task A_write_without_an_expiry_is_sent_fire_and_forget()
     {
         var (cache, database) = CreateCache();
 
@@ -34,7 +34,7 @@ public class RedisDistributedCacheTests
     }
 
     [Fact]
-    public async Task SetAsync_WithSlidingExpiration_Throws()
+    public async Task Sliding_expiration_is_not_supported()
     {
         var (cache, _) = CreateCache();
 
@@ -43,7 +43,7 @@ public class RedisDistributedCacheTests
     }
 
     [Fact]
-    public async Task SetAsync_WithElapsedAbsoluteExpiry_DoesNotWrite()
+    public async Task An_expiry_in_the_past_writes_nothing()
     {
         var (cache, database) = CreateCache();
 
@@ -57,7 +57,7 @@ public class RedisDistributedCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_ReturnsValue_WhenPresent()
+    public async Task A_stored_value_can_be_read_back_from_redis()
     {
         var (cache, database) = CreateCache();
         database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns((RedisValue)Payload);
@@ -66,7 +66,7 @@ public class RedisDistributedCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_ReturnsNull_WhenMissing()
+    public async Task A_missing_key_reads_as_nothing()
     {
         var (cache, database) = CreateCache();
         database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(RedisValue.Null);
@@ -75,7 +75,7 @@ public class RedisDistributedCacheTests
     }
 
     [Fact]
-    public async Task RemoveAsync_Deletes_FireAndForget()
+    public async Task A_remove_deletes_the_key_fire_and_forget()
     {
         var (cache, database) = CreateCache();
 

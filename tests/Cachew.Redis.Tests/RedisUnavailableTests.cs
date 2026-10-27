@@ -12,7 +12,7 @@ namespace Cachew.Redis.Tests;
 public class RedisUnavailableTests
 {
     [Fact]
-    public async Task WhenRedisIsUnavailable_TheCacheDegradesToMissesRatherThanFailing()
+    public async Task An_unavailable_redis_degrades_to_misses_instead_of_failing()
     {
         await using var connection = await ConnectToNothing();
 

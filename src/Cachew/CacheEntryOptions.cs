@@ -1,7 +1,9 @@
 namespace Cachew;
 
 /// <summary>
-/// Per entry overrides. Unset members fall back to <see cref="CachewOptions"/> defaults.
+/// Per entry overrides. Unset members fall back to <see cref="CachewOptions"/> defaults. An override
+/// can change the lifetime within an enabled layer, but it cannot switch on a layer that the configured
+/// defaults turn off.
 /// </summary>
 /// <typeparam name="T">The cached value type.</typeparam>
 public sealed class CacheEntryOptions<T>

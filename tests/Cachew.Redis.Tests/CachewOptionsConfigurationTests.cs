@@ -12,7 +12,7 @@ namespace Cachew.Redis.Tests;
 public class CachewOptionsConfigurationTests
 {
     [Fact]
-    public void CachewOptions_BindFromAConfigurationSection()
+    public void The_cache_options_bind_from_a_configuration_section()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>

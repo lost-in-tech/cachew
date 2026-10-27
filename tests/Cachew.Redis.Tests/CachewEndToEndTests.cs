@@ -30,7 +30,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task SetThenGet_RoundTrips_AndReachesBothLayers()
+    public async Task A_stored_value_round_trips_and_reaches_both_layers()
     {
         using var provider = CreateProvider(_connection);
         var cache = provider.GetRequiredService<ICachew>();
@@ -45,7 +45,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task OneAddCachewRedisCall_IsEnoughForBothLayers()
+    public async Task One_registration_call_is_enough_for_both_layers()
     {
         var services = new ServiceCollection();
         services.AddSingleton(_connection);
@@ -66,7 +66,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task SettingsOnTheRedisCall_TakeEffectEndToEnd()
+    public async Task Settings_passed_to_the_registration_take_effect_end_to_end()
     {
         // The connection string overload, as a consumer would write it. It opens its own connection,
         // which the container owns, so this does not disturb the connection the fixture shares.
@@ -88,7 +88,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task ReadsComeFromMemory_EvenWhenRedisChangesUnderneath()
+    public async Task A_read_comes_from_memory_even_when_redis_changes_underneath()
     {
         using var provider = CreateProvider(_connection);
         var cache = provider.GetRequiredService<ICachew>();
@@ -104,7 +104,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task WithTheMemoryLayerDisabled_EveryReadGoesToRedis()
+    public async Task A_disabled_memory_layer_sends_every_read_to_redis()
     {
         using var provider = CreateProvider(_connection, options => options.DefaultInMemoryTimeToLive = TimeSpan.Zero);
         var cache = provider.GetRequiredService<ICachew>();
@@ -121,7 +121,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task WithTheDistributedLayerDisabled_WritesStayInMemory()
+    public async Task A_disabled_distributed_layer_keeps_writes_in_memory()
     {
         using var provider = CreateProvider(_connection, options => options.DefaultDistributedTimeToLive = TimeSpan.Zero);
         var cache = provider.GetRequiredService<ICachew>();
@@ -137,7 +137,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_CachesWhatTheFactoryProduced()
+    public async Task The_factory_result_is_cached()
     {
         using var provider = CreateProvider(_connection);
         var cache = provider.GetRequiredService<ICachew>();
@@ -153,7 +153,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_CoalescesConcurrentMisses()
+    public async Task Concurrent_misses_for_one_key_run_the_factory_once()
     {
         using var provider = CreateProvider(_connection);
         var cache = provider.GetRequiredService<ICachew>();
@@ -178,7 +178,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task ACachedNull_IsAHitOnAnotherInstance()
+    public async Task A_cached_null_is_a_hit_on_another_instance()
     {
         using var providerA = CreateProvider(_connection);
         using var providerB = CreateProvider(_secondConnection);
@@ -204,7 +204,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task ShouldCacheFalse_StoresNothing()
+    public async Task A_value_rejected_by_ShouldCache_is_not_stored()
     {
         using var provider = CreateProvider(_connection);
         var cache = provider.GetRequiredService<ICachew>();
@@ -221,7 +221,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task APerEntryExpiry_IsAppliedToTheStoredEntry()
+    public async Task A_per_entry_expiry_is_applied_to_the_stored_entry()
     {
         using var provider = CreateProvider(_connection);
         var cache = provider.GetRequiredService<ICachew>();
@@ -240,7 +240,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task TheFluentBuilder_RoundTrips()
+    public async Task The_fluent_builder_round_trips()
     {
         using var provider = CreateProvider(_connection);
         var cache = provider.GetRequiredService<ICachew>();
@@ -259,7 +259,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task Remove_PurgesBothLayers()
+    public async Task Removing_a_key_purges_both_layers()
     {
         using var provider = CreateProvider(_connection);
         var cache = provider.GetRequiredService<ICachew>();
@@ -277,7 +277,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task AnExpiredEntryInRedis_IsAMiss_AndIsReloaded()
+    public async Task An_expired_entry_in_redis_is_a_miss_that_reloads()
     {
         using var provider = CreateProvider(_connection);
         var cache = provider.GetRequiredService<ICachew>();
@@ -302,7 +302,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task AnUnreadableEntryInRedis_IsAMiss_AndIsReplaced()
+    public async Task An_unreadable_entry_in_redis_is_a_miss_that_is_replaced()
     {
         using var provider = CreateProvider(_connection);
         var cache = provider.GetRequiredService<ICachew>();
@@ -317,7 +317,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task TheStoredPayload_IsCamelCase_WithoutNulls_AndWithStringEnums()
+    public async Task The_stored_payload_is_camel_case_without_nulls_and_with_named_enums()
     {
         using var providerA = CreateProvider(_connection);
         using var providerB = CreateProvider(_secondConnection);
@@ -338,7 +338,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task AKeyPrefix_NamespacesStoredKeys()
+    public async Task A_key_prefix_namespaces_stored_keys()
     {
         using var provider = CreateProvider(_connection, options => options.KeyPrefix = "e2e-prefix:");
         var cache = provider.GetRequiredService<ICachew>();
@@ -350,7 +350,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task Disabled_StoresNothing_AndCallsTheFactoryEveryTime()
+    public async Task A_disabled_cache_stores_nothing_and_runs_the_factory_every_time()
     {
         using var provider = CreateProvider(_connection, options => options.Enabled = false);
         var cache = provider.GetRequiredService<ICachew>();
@@ -366,7 +366,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task DisabledFromConfiguration_IsOffEndToEnd()
+    public async Task A_cache_disabled_from_configuration_is_off_end_to_end()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Cachew:Enabled"] = "false" })
@@ -396,7 +396,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task WithFireAndForgetOff_TheWriteIsStoredWhenSetReturns()
+    public async Task A_write_is_stored_when_it_returns_with_fire_and_forget_off()
     {
         var services = new ServiceCollection();
         services.AddSingleton(_connection);
@@ -415,7 +415,7 @@ public sealed class CachewEndToEndTests
     }
 
     [Fact]
-    public async Task ASizeLimitConfiguredAfterAddCachewIsStillHonoured()
+    public async Task A_size_limit_configured_after_registration_is_honoured()
     {
         var services = new ServiceCollection();
         services.AddSingleton(_connection);

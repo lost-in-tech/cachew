@@ -13,7 +13,7 @@ public class TwoLayerCacheTests
     private static readonly CachewOptions DefaultOptions = new();
 
     [Fact]
-    public async Task GetAsync_ReturnsDefault_WhenKeyIsMissing()
+    public async Task A_never_cached_key_returns_nothing()
     {
         var cache = CreateCache(out _);
 
@@ -23,7 +23,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task SetAsync_ThenGetAsync_ReturnsValue()
+    public async Task A_stored_value_can_be_read_back()
     {
         var cache = CreateCache(out _);
 
@@ -33,7 +33,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_ReadsFromDistributedLayer_WhenMemoryLayerIsEmpty()
+    public async Task A_value_written_by_another_instance_is_read_from_the_distributed_layer()
     {
         var distributed = CreateDistributedCache();
         var writer = CreateCache(distributed);
@@ -46,7 +46,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_PopulatesMemoryLayer_FromDistributedLayer()
+    public async Task A_distributed_hit_is_promoted_into_the_memory_layer()
     {
         var distributed = CreateDistributedCache();
         var writer = CreateCache(distributed);
@@ -61,7 +61,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_InvokesFactory_OnlyOnMiss()
+    public async Task The_factory_runs_only_on_a_miss()
     {
         var cache = CreateCache(out _);
         var calls = 0;
@@ -75,7 +75,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task RemoveAsync_ClearsBothLayers()
+    public async Task Removing_a_key_clears_both_layers()
     {
         var distributed = CreateDistributedCache();
         var cache = CreateCache(distributed);
@@ -88,7 +88,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task KeysAreNamespacedByPrefix()
+    public async Task A_configured_prefix_namespaces_the_stored_keys()
     {
         var distributed = CreateDistributedCache();
         var cache = CreateCache(distributed);
@@ -100,7 +100,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_CoalescesConcurrentMisses()
+    public async Task Concurrent_misses_for_one_key_run_the_factory_once()
     {
         var cache = CreateCache(out _);
         var calls = 0;
@@ -129,7 +129,37 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_PropagatesFailure_AndAllowsRetry()
+    public async Task A_key_read_as_two_types_still_produces_a_value_for_each()
+    {
+        var cache = CreateCache(out _);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async Task<string> TextFactory(CancellationToken _)
+        {
+            await gate.Task;
+            return "text";
+        }
+
+        async Task<int> NumberFactory(CancellationToken _)
+        {
+            await gate.Task;
+            return 42;
+        }
+
+        var text = cache.GetOrCreateAsync("key", TextFactory).AsTask();
+        await Task.Delay(50);
+        var number = cache.GetOrCreateAsync("key", NumberFactory).AsTask();
+
+        gate.SetResult();
+
+        // One key as two types is a misuse, but each caller still gets the value its own factory
+        // produced rather than a cast failure.
+        Assert.Equal("text", await text);
+        Assert.Equal(42, await number);
+    }
+
+    [Fact]
+    public async Task A_failing_factory_propagates_the_failure_and_the_next_call_retries()
     {
         var cache = CreateCache(out _);
         var calls = 0;
@@ -157,7 +187,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task SetAsync_WithZeroInMemoryTimeToLive_DoesNotPopulateMemoryLayer()
+    public async Task A_zero_in_memory_lifetime_keeps_the_value_out_of_memory()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out var memory);
 
@@ -168,7 +198,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task SetAsync_WithZeroDistributedTimeToLive_DoesNotPopulateDistributedLayer()
+    public async Task A_zero_distributed_lifetime_keeps_the_value_out_of_the_distributed_layer()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out var memory);
 
@@ -179,7 +209,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task SetAsync_WithBothLayersDisabled_DoesNotCache()
+    public async Task Two_zero_lifetimes_cache_nothing()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out var memory);
 
@@ -195,7 +225,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_WhenShouldCacheIsFalse_DoesNotCache()
+    public async Task A_value_rejected_by_ShouldCache_is_not_cached()
     {
         var cache = CreateCache(out _);
         var calls = 0;
@@ -210,7 +240,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_WhenShouldCacheIsTrue_Caches()
+    public async Task A_value_accepted_by_ShouldCache_is_cached()
     {
         var cache = CreateCache(out _);
         var calls = 0;
@@ -225,7 +255,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_WithInMemoryDisabled_ReadsFromDistributedLayerWithoutPopulatingMemory()
+    public async Task A_disabled_memory_layer_is_not_populated_by_a_distributed_read()
     {
         var options = new CachewOptions { DefaultInMemoryTimeToLive = TimeSpan.Zero };
         var distributed = CreateDistributedCache();
@@ -240,7 +270,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_WithDistributedDisabled_DoesNotReadDistributedLayer()
+    public async Task A_disabled_distributed_layer_is_never_read()
     {
         var options = new CachewOptions { DefaultDistributedTimeToLive = TimeSpan.Zero };
         var distributed = CreateDistributedCache();
@@ -253,7 +283,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_PromotedEntry_ExpiresWithInMemoryTimeToLive()
+    public async Task A_promoted_entry_expires_with_the_in_memory_lifetime()
     {
         var options = new CachewOptions { DefaultInMemoryTimeToLive = TimeSpan.FromMilliseconds(100) };
         var distributed = CreateDistributedCache();
@@ -274,7 +304,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task RemoveAsync_WithDistributedDisabled_DoesNotTouchDistributedLayer()
+    public async Task A_disabled_distributed_layer_is_not_touched_by_a_remove()
     {
         var options = new CachewOptions { DefaultDistributedTimeToLive = TimeSpan.Zero };
         var distributed = CreateDistributedCache();
@@ -290,7 +320,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_CancellingTheLeader_DoesNotAbandonTheSharedWork()
+    public async Task Cancelling_the_caller_that_started_the_work_does_not_abandon_it()
     {
         var cache = CreateCache(out _);
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -317,7 +347,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_TreatsPayloadWithoutExpiryAsMiss()
+    public async Task A_payload_without_an_expiry_is_a_miss()
     {
         var distributed = CreateDistributedCache();
         await distributed.SetAsync(
@@ -330,7 +360,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_WhenDistributedLayerFails_ReturnsMiss()
+    public async Task A_failing_distributed_layer_turns_a_read_into_a_miss()
     {
         var cache = CreateCache(new FailingDistributedCache(new CacheUnavailableException()));
 
@@ -338,7 +368,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_WhenDistributedLayerFails_UsesMemoryLayer()
+    public async Task A_failing_distributed_layer_still_uses_the_memory_layer()
     {
         var cache = CreateCache(new FailingDistributedCache(new CacheUnavailableException()));
         var calls = 0;
@@ -352,7 +382,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task SetAsync_WhenDistributedLayerFails_StillCachesInMemory()
+    public async Task A_failing_distributed_layer_does_not_stop_an_in_memory_write()
     {
         var cache = CreateCache(new FailingDistributedCache(new CacheUnavailableException()));
 
@@ -362,7 +392,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task RemoveAsync_WhenDistributedLayerFails_StillClearsMemoryLayer()
+    public async Task A_failing_distributed_layer_does_not_stop_a_memory_remove()
     {
         var cache = CreateCache(new FailingDistributedCache(new CacheUnavailableException()));
 
@@ -375,7 +405,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_WhenDistributedLayerIsCancelled_PropagatesCancellation()
+    public async Task Cancellation_from_the_distributed_layer_is_propagated()
     {
         var cache = CreateCache(new FailingDistributedCache(new OperationCanceledException()));
 
@@ -383,7 +413,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task Cache_WithSizeLimitedMemoryCache_Works()
+    public async Task A_size_limited_memory_cache_still_serves_values()
     {
         var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 10 });
         var cache = new TwoLayerCache(memory, CreateDistributedCache(), Options.Create(DefaultOptions));
@@ -394,7 +424,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_TreatsExpiredPayloadAsMiss()
+    public async Task An_expired_payload_is_a_miss()
     {
         var expiredAt = DateTimeOffset.UtcNow.AddMinutes(-1).ToString("O");
         var distributed = CreateDistributedCache();
@@ -408,7 +438,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_WhenTheFactoryIsCancelled_ThrowsCancellation()
+    public async Task A_cancelled_factory_reports_cancellation()
     {
         var cache = CreateCache(out _);
         using var cts = new CancellationTokenSource();
@@ -422,7 +452,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_TreatsLiteralJsonNullPayloadAsMiss()
+    public async Task A_literal_json_null_payload_is_a_miss()
     {
         var distributed = CreateDistributedCache();
         await distributed.SetAsync(
@@ -435,7 +465,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_PromotedEntry_IsCappedByTheRemainingDistributedLifetime()
+    public async Task A_promoted_entry_cannot_outlive_the_distributed_entry_it_came_from()
     {
         var options = new CachewOptions { DefaultInMemoryTimeToLive = TimeSpan.FromSeconds(30) };
         var distributed = CreateDistributedCache();
@@ -460,7 +490,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_ReturnsACachedNull_WithoutInvokingTheFactory()
+    public async Task A_cached_null_is_a_hit_that_skips_the_factory()
     {
         var distributed = CreateDistributedCache();
         var writer = CreateCache(distributed);
@@ -486,7 +516,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_ReturnsACachedNull_FromTheMemoryLayer()
+    public async Task A_cached_null_is_served_from_the_memory_layer()
     {
         var cache = CreateCache(out _);
         await cache.SetAsync<string?>("key", null);
@@ -507,7 +537,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetAsync_WhenThePayloadDoesNotFitTheType_ReturnsMissAndLogs()
+    public async Task A_payload_that_does_not_fit_the_type_is_a_miss_and_is_logged()
     {
         var distributed = CreateDistributedCache();
         await distributed.SetAsync(
@@ -530,7 +560,7 @@ public class TwoLayerCacheTests
         => (string)((Delegate)arguments[4]!).DynamicInvoke(arguments[2], arguments[3])!;
 
     [Fact]
-    public async Task GetOrCreateAsync_WhenThePayloadDoesNotFitTheType_ReloadsAndReplacesTheEntry()
+    public async Task A_payload_that_does_not_fit_the_type_is_reloaded_and_replaced()
     {
         var distributed = CreateDistributedCache();
         await distributed.SetAsync(
@@ -557,7 +587,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task SerializerDefaults_WriteCamelCase_IgnoreNulls_AndStringEnums()
+    public async Task The_default_serializer_writes_camel_case_ignores_nulls_and_names_enums()
     {
         var distributed = CreateDistributedCache();
         var writer = CreateCache(distributed);
@@ -578,7 +608,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task NumericEnumPayload_WrittenBeforeStringEnums_StillReads()
+    public async Task A_numeric_enum_payload_still_reads()
     {
         var distributed = CreateDistributedCache();
         await distributed.SetAsync(
@@ -591,7 +621,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task SetAsync_WithABackplane_PublishesTheInvalidatedKey()
+    public async Task A_write_publishes_the_key_for_other_instances()
     {
         var backplane = new FakeBackplane();
         var cache = CreateCache(CreateDistributedCache(), backplane, out _);
@@ -602,7 +632,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task GetOrCreateAsync_WithABackplane_PublishesTheFilledKey()
+    public async Task A_filled_key_is_published_for_other_instances()
     {
         var backplane = new FakeBackplane();
         var cache = CreateCache(CreateDistributedCache(), backplane, out _);
@@ -614,7 +644,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task RemoveAsync_WithABackplane_PublishesTheInvalidatedKey()
+    public async Task A_remove_publishes_the_key_for_other_instances()
     {
         var backplane = new FakeBackplane();
         var cache = CreateCache(CreateDistributedCache(), backplane, out _);
@@ -625,7 +655,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task InvalidationFromAnotherInstance_EvictsTheMemoryLayer()
+    public async Task An_invalidation_from_another_instance_evicts_the_memory_layer()
     {
         var backplane = new FakeBackplane();
         var cache = CreateCache(CreateDistributedCache(), backplane, out var memory);
@@ -640,7 +670,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task InvalidationFromAnotherInstance_LeavesTheDistributedLayerAlone()
+    public async Task An_invalidation_from_another_instance_leaves_the_distributed_layer_alone()
     {
         var backplane = new FakeBackplane();
         var distributed = CreateDistributedCache();
@@ -655,7 +685,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task WhenTheMemoryLayerIsDisabled_NothingIsPublished()
+    public async Task A_disabled_memory_layer_publishes_nothing()
     {
         var backplane = new FakeBackplane();
         var options = new CachewOptions { DefaultInMemoryTimeToLive = TimeSpan.Zero };
@@ -668,7 +698,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public void DisposingTheCache_UnsubscribesFromTheBackplane()
+    public void Disposing_the_cache_unsubscribes_from_the_backplane()
     {
         var backplane = new FakeBackplane();
         var cache = CreateCache(CreateDistributedCache(), backplane, out _);
@@ -680,7 +710,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task WhenTheBackplaneThrows_TheWriteStillSucceeds()
+    public async Task A_failing_backplane_does_not_stop_a_write_or_a_remove()
     {
         var backplane = new FakeBackplane(new InvalidOperationException("the backplane is unavailable."));
         var logger = Substitute.For<ILogger<TwoLayerCache>>();
@@ -702,7 +732,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task InvalidationFromAnotherInstance_DoesNotPublishAgain()
+    public async Task A_received_invalidation_is_not_published_again()
     {
         var backplane = new FakeBackplane();
         var cache = CreateCache(CreateDistributedCache(), backplane, out _);
@@ -719,7 +749,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task WhenDisabled_NothingIsStoredOrReturned()
+    public async Task A_disabled_cache_stores_and_returns_nothing()
     {
         var options = new CachewOptions { Enabled = false };
         var distributed = CreateDistributedCache();
@@ -734,7 +764,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task WhenDisabled_APerEntryOverrideDoesNotEnableCaching()
+    public async Task A_disabled_cache_ignores_a_per_entry_override()
     {
         var options = new CachewOptions { Enabled = false };
         var distributed = CreateDistributedCache();
@@ -750,7 +780,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task WhenDisabled_GetOrCreateAsyncCallsTheFactoryEveryTime()
+    public async Task A_disabled_cache_runs_the_factory_every_time()
     {
         var options = new CachewOptions { Enabled = false };
         var cache = CreateCache(CreateDistributedCache(), options, out _);
@@ -763,7 +793,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task WhenDisabled_NothingIsPublishedToTheBackplane()
+    public async Task A_disabled_cache_publishes_nothing()
     {
         var backplane = new FakeBackplane();
         var options = new CachewOptions { Enabled = false };
@@ -780,7 +810,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task WhenTheDistributedLayerFails_TheFailureIsLogged()
+    public async Task A_failing_distributed_layer_is_logged_for_a_read_a_write_and_a_remove()
     {
         var logger = Substitute.For<ILogger<TwoLayerCache>>();
         var cache = new TwoLayerCache(
@@ -799,9 +829,55 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public void CacheIsEnabledByDefault()
+    public void Caching_is_on_by_default()
     {
         Assert.True(new CachewOptions().Enabled);
+    }
+
+    [Fact]
+    public async Task A_per_entry_lifetime_cannot_re_enable_a_memory_layer_that_is_off_by_default()
+    {
+        var options = new CachewOptions
+        {
+            DefaultInMemoryTimeToLive = TimeSpan.Zero,
+            DefaultDistributedTimeToLive = TimeSpan.FromMinutes(10),
+        };
+        var distributed = CreateDistributedCache();
+        var memory = new MemoryCache(new MemoryCacheOptions());
+        var backplane = new FakeBackplane();
+        var cache = new TwoLayerCache(memory, distributed, Options.Create(options), backplane: backplane);
+        var entry = new CacheEntryOptions<string> { InMemoryTimeToLive = TimeSpan.FromMinutes(5) };
+
+        await cache.SetAsync("key", "value", entry);
+
+        // The layer is off for the whole app, so the value lands in the distributed layer only and
+        // there is nothing in memory to invalidate.
+        Assert.False(memory.TryGetValue(options.KeyPrefix + "key", out _));
+        Assert.Empty(backplane.Published);
+        Assert.NotNull(await distributed.GetAsync(options.KeyPrefix + "key"));
+
+        // Reading back through the same override must not resurrect a value that was removed.
+        await cache.RemoveAsync("key");
+        Assert.Null(await cache.GetAsync<string>("key", entry));
+    }
+
+    [Fact]
+    public async Task A_per_entry_lifetime_cannot_re_enable_a_distributed_layer_that_is_off_by_default()
+    {
+        var options = new CachewOptions
+        {
+            DefaultInMemoryTimeToLive = TimeSpan.FromMinutes(1),
+            DefaultDistributedTimeToLive = TimeSpan.Zero,
+        };
+        var distributed = CreateDistributedCache();
+        var memory = new MemoryCache(new MemoryCacheOptions());
+        var cache = new TwoLayerCache(memory, distributed, Options.Create(options));
+        var entry = new CacheEntryOptions<string> { DistributedTimeToLive = TimeSpan.FromMinutes(5) };
+
+        await cache.SetAsync("key", "value", entry);
+
+        Assert.Null(await distributed.GetAsync(options.KeyPrefix + "key"));
+        Assert.True(memory.TryGetValue(options.KeyPrefix + "key", out _));
     }
 
     private static ICachew CreateCache(IDistributedCache distributed, CachewOptions options, out IMemoryCache memory)
@@ -817,7 +893,7 @@ public class TwoLayerCacheTests
     }
 
     [Fact]
-    public async Task ASizeLimitedMemoryCacheEvictsOnceTheLimitIsReached()
+    public async Task A_size_limit_evicts_entries_once_it_is_reached()
     {
         var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 2 });
         var cache = new TwoLayerCache(memory, CreateDistributedCache(), Options.Create(DefaultOptions));

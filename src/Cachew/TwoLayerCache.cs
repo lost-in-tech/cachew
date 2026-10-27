@@ -16,7 +16,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
     private readonly ILogger<TwoLayerCache> _logger;
     private readonly ICachewBackplane _backplane;
     private readonly IDisposable _subscription;
-    private readonly ConcurrentDictionary<string, Task> _inFlight = new();
+    private readonly ConcurrentDictionary<(string Key, Type ValueType), Task> _inFlight = new();
 
     public TwoLayerCache(
         IMemoryCache memoryCache,
@@ -71,15 +71,20 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
             return cached!;
         }
 
+        // The value type is part of the single flight key because the entry is a Task<T>: two callers
+        // using one key as two types have to get their own slot, or the cast below would fault instead
+        // of letting each run its own factory.
+        var flightKey = (Key: cacheKey, ValueType: typeof(T));
+
         while (true)
         {
-            if (_inFlight.TryGetValue(cacheKey, out var inFlight))
+            if (_inFlight.TryGetValue(flightKey, out var inFlight))
             {
                 return await ((Task<T>)inFlight).WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 
             var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-            if (!_inFlight.TryAdd(cacheKey, completion.Task))
+            if (!_inFlight.TryAdd(flightKey, completion.Task))
             {
                 continue;
             }
@@ -143,7 +148,7 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
         }
         finally
         {
-            _inFlight.TryRemove(cacheKey, out _);
+            _inFlight.TryRemove((cacheKey, typeof(T)), out _);
         }
     }
 
@@ -247,12 +252,14 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
     }
 
     // A disabled cache wins over per entry overrides: turning it off from configuration has to turn
-    // it off everywhere, not only where the defaults apply.
+    // it off everywhere. The same goes for a layer that is off through a zero default, so a per entry
+    // time to live can adjust an enabled layer but cannot switch one on. Keeping that rule here is what
+    // lets remove and publish decide from the default alone and still agree with what a write did.
     private TimeSpan InMemoryTimeToLive<T>(CacheEntryOptions<T>? options)
-        => _options.Enabled ? options?.InMemoryTimeToLive ?? _options.DefaultInMemoryTimeToLive : TimeSpan.Zero;
+        => InMemoryEnabled ? options?.InMemoryTimeToLive ?? _options.DefaultInMemoryTimeToLive : TimeSpan.Zero;
 
     private TimeSpan DistributedTimeToLive<T>(CacheEntryOptions<T>? options)
-        => _options.Enabled ? options?.DistributedTimeToLive ?? _options.DefaultDistributedTimeToLive : TimeSpan.Zero;
+        => DistributedEnabled ? options?.DistributedTimeToLive ?? _options.DefaultDistributedTimeToLive : TimeSpan.Zero;
 
     private bool InMemoryEnabled => _options.Enabled && _options.DefaultInMemoryTimeToLive > TimeSpan.Zero;
 

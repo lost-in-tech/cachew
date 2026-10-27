@@ -10,7 +10,7 @@ public class CacheBuilderTests
     private static readonly CachewOptions DefaultOptions = new();
 
     [Fact]
-    public async Task GetAsync_CachesValueAndReturnsIt()
+    public async Task A_factory_value_is_cached_and_returned()
     {
         var cache = CreateCache(out _);
         var calls = 0;
@@ -23,7 +23,7 @@ public class CacheBuilderTests
     }
 
     [Fact]
-    public async Task CacheIf_WhenFalse_DoesNotCache()
+    public async Task A_value_rejected_by_CacheIf_is_not_cached()
     {
         var cache = CreateCache(out _);
         var calls = 0;
@@ -36,7 +36,7 @@ public class CacheBuilderTests
     }
 
     [Fact]
-    public async Task CacheIf_WhenTrue_Caches()
+    public async Task A_value_accepted_by_CacheIf_is_cached()
     {
         var cache = CreateCache(out _);
         var calls = 0;
@@ -49,7 +49,7 @@ public class CacheBuilderTests
     }
 
     [Fact]
-    public async Task ExpireIn_WithZeroDistributedSeconds_DoesNotUseDistributedLayer()
+    public async Task A_zero_distributed_expiry_keeps_the_value_out_of_the_distributed_layer()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out _);
 
@@ -60,7 +60,7 @@ public class CacheBuilderTests
     }
 
     [Fact]
-    public async Task ExpireIn_WithZeroInMemorySeconds_DoesNotUseMemoryLayer()
+    public async Task A_zero_in_memory_expiry_keeps_the_value_out_of_memory()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out var memory);
 
@@ -71,7 +71,7 @@ public class CacheBuilderTests
     }
 
     [Fact]
-    public async Task ExpireIn_SetsDistributedExpiry()
+    public async Task A_distributed_expiry_is_written_into_the_payload()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out _);
         var before = DateTimeOffset.UtcNow;
@@ -90,7 +90,7 @@ public class CacheBuilderTests
     }
 
     [Fact]
-    public async Task Builder_CanBeReusedForDifferentKeys()
+    public async Task A_builder_can_be_reused_for_different_keys()
     {
         var cache = CreateCache(out _);
         var calls = 0;
@@ -103,7 +103,7 @@ public class CacheBuilderTests
     }
 
     [Fact]
-    public async Task ExpireIn_WithNulls_UsesTheConfiguredDefaults()
+    public async Task Null_expiries_fall_back_to_the_configured_defaults()
     {
         var cache = CreateCache(DefaultOptions, out var distributed, out _);
 

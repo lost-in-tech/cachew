@@ -10,7 +10,7 @@ namespace Cachew.Redis.Tests;
 public class ServiceCollectionExtensionsTests
 {
     [Fact]
-    public void AddCachewRedis_UsesDefaultConnectionStringName()
+    public void The_default_connection_string_name_is_read_from_configuration()
     {
         Assert.Equal("Cachew", ServiceCollectionExtensions.DefaultConnectionStringName);
 
@@ -23,7 +23,7 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddCachewRedis_DefaultConnectionStringMissing_FailsOnResolve()
+    public void A_missing_default_connection_string_fails_when_the_multiplexer_is_resolved()
     {
         var services = new ServiceCollection();
         AddConfiguration(services, ("ConnectionStrings:Other", "localhost:6379"));
@@ -35,7 +35,7 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddCachewRedis_WithConnectionString_RegistersMultiplexerAndCache()
+    public void A_connection_string_registers_the_multiplexer_and_the_cache()
     {
         var services = new ServiceCollection();
 
@@ -45,7 +45,7 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddCachewRedis_WithConnectionStringFactory_RegistersMultiplexerAndCache()
+    public void A_connection_string_factory_registers_the_multiplexer_and_the_cache()
     {
         var services = new ServiceCollection();
         AddConfiguration(services, ("ConnectionStrings:redis", "localhost:6379"));
@@ -56,7 +56,7 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddCachewRedis_WithConnectionStringFactory_PassesConfigurationAndFailsOnEmptyResult()
+    public void A_connection_string_factory_receives_configuration_and_an_empty_result_fails()
     {
         var services = new ServiceCollection();
         AddConfiguration(services, ("ConnectionStrings:redis", "localhost:6379"));
@@ -76,7 +76,7 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddCachewRedis_WithConnectionFactory_ResolvesFromFactory()
+    public void A_connection_factory_supplies_the_multiplexer()
     {
         var services = new ServiceCollection();
         var connection = Substitute.For<IConnectionMultiplexer>();
@@ -89,7 +89,7 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddCachewRedis_WithConnectionFactory_KeepsExistingRegistration()
+    public void An_existing_multiplexer_registration_is_kept()
     {
         var services = new ServiceCollection();
         var existing = Substitute.For<IConnectionMultiplexer>();
@@ -102,7 +102,7 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddCachewRedis_WithConnectionString_AppliesTheCacheOptions()
+    public void A_connection_string_overload_applies_the_cache_options()
     {
         var services = new ServiceCollection();
 
@@ -113,7 +113,7 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddCachewRedis_RegistersTheCache_SoOneCallIsEnough()
+    public void One_registration_call_is_enough_for_the_cache()
     {
         var services = new ServiceCollection();
         services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
@@ -125,7 +125,7 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddCachewRedis_ResolvesCache_FromRegisteredMultiplexer()
+    public void The_cache_is_built_over_the_registered_multiplexer()
     {
         var services = new ServiceCollection();
         services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
@@ -137,7 +137,7 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddCachewRedis_WithConnectionFactory_TheContainerOwnsTheResult()
+    public void The_container_owns_a_multiplexer_it_created()
     {
         var services = new ServiceCollection();
         var connection = Substitute.For<IConnectionMultiplexer>();
@@ -151,7 +151,7 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddCachewRedis_WithARegisteredConnection_LeavesItAlone()
+    public void The_container_leaves_a_registered_multiplexer_alone()
     {
         var services = new ServiceCollection();
         var connection = Substitute.For<IConnectionMultiplexer>();

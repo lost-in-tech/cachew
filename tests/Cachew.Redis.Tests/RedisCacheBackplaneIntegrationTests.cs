@@ -25,7 +25,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
     }
 
     [Fact]
-    public async Task Publish_IsReceivedByAnotherBackplane()
+    public async Task A_published_invalidation_reaches_another_instance()
     {
         const string channel = "cachew:test-backplane-receive";
         using var publisher = new RedisCacheBackplane(_connection, channel);
@@ -49,7 +49,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
     }
 
     [Fact]
-    public async Task Publish_IsNotEchoedBackToThePublisher_ButIsSeenByOthers()
+    public async Task An_invalidation_is_not_echoed_to_its_publisher_but_is_seen_by_others()
     {
         const string channel = "cachew:test-backplane-echo";
         using var self = new RedisCacheBackplane(_connection, channel);
@@ -80,7 +80,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
     }
 
     [Fact]
-    public async Task UnreadableMessages_AreIgnored()
+    public async Task An_unreadable_message_is_ignored()
     {
         const string channel = "cachew:test-backplane-unreadable";
         var redisChannel = RedisChannel.Literal(channel);
@@ -106,7 +106,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
     }
 
     [Fact]
-    public async Task RemovingOnOneInstance_EvictsTheMemoryLayerOfTheOther()
+    public async Task Removing_a_key_on_one_instance_evicts_it_on_another()
     {
         const string channel = "cachew:test-backplane-evict";
         using var providerA = CreateProvider(_connection, channel);
@@ -137,7 +137,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
     }
 
     [Fact]
-    public void Dispose_Twice_IsSafe_AndSubscribeAfterDisposeThrows()
+    public void Disposing_twice_is_safe_and_subscribing_afterwards_throws()
     {
         var backplane = new RedisCacheBackplane(_connection, "cachew:test-backplane-dispose");
 
@@ -148,7 +148,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
     }
 
     [Fact]
-    public async Task UnreadableMessage_IsLogged()
+    public async Task An_unreadable_message_is_logged()
     {
         const string channel = "cachew:test-backplane-logs";
         var redisChannel = RedisChannel.Literal(channel);
@@ -171,7 +171,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
     }
 
     [Fact]
-    public void Backplane_IsNotRegistered_UnlessItIsAskedFor()
+    public void No_backplane_is_registered_unless_it_is_asked_for()
     {
         using var provider = CreateProvider(_connection, channel: null);
 
@@ -179,7 +179,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
     }
 
     [Fact]
-    public void AddCachewBackplane_RegistersTheRedisBackplane()
+    public void The_backplane_registration_registers_the_redis_backplane()
     {
         using var provider = CreateProvider(_connection, "cachew:test-backplane-registration");
 
@@ -187,7 +187,7 @@ public sealed class RedisCacheBackplaneIntegrationTests
     }
 
     [Fact]
-    public async Task ASetOnOneInstance_EvictsTheOtherMemoryLayer_ButLeavesRedisAlone()
+    public async Task A_write_on_one_instance_evicts_the_other_memory_layer_but_leaves_redis_alone()
     {
         const string channel = "cachew:test-backplane-set";
         using var providerA = CreateProvider(_connection, channel);

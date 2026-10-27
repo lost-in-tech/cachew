@@ -47,7 +47,7 @@ public sealed class RedisBackplaneRecoveryTests
     public RedisBackplaneRecoveryTests(BackplaneRedisFixture fixture) => _connection = fixture.Connection;
 
     [Fact]
-    public async Task TheSubscriptionComesBackAfterItsConnectionIsKilled()
+    public async Task A_subscription_comes_back_after_its_connection_is_killed()
     {
         var database = _connection.GetDatabase();
         var channel = "cachew:test-backplane-recovery";
