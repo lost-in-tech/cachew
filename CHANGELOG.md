@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1-beta02](https://github.com/lost-in-tech/cachew/compare/v1.0.0-beta02...v1.0.1-beta02) (2026-10-27)
+
+
+### Bug Fixes
+
+* a zero default disables a layer for the whole app ([7fa4788](https://github.com/lost-in-tech/cachew/commit/7fa47885663a4573b07769ebac32e4895a3afc5f))
+
 ## [1.0.0-beta02](https://github.com/lost-in-tech/cachew/compare/v0.0.2-beta02...v1.0.0-beta02) (2026-10-25)
 
 

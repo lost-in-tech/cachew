@@ -10,7 +10,7 @@
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
     <!-- A single property, because release-please rewrites one XML element. Keep it in step with
          version.txt, which the release-please configuration updates alongside this. -->
-    <Version Condition="'$(Version)' == ''">1.0.0-beta02</Version>
+    <Version Condition="'$(Version)' == ''">1.0.1-beta02</Version>
   </PropertyGroup>
 
 </Project>
