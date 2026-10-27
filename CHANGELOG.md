@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/lost-in-tech/cachew/compare/v1.0.1-beta02...v1.0.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* mark the API stable and document the layer rule a zero default sets ([10e3664](https://github.com/lost-in-tech/cachew/commit/10e3664dd493bc26b61325dd1acff0dd8e94fad6))
+
 ## [1.0.1-beta02](https://github.com/lost-in-tech/cachew/compare/v1.0.0-beta02...v1.0.1-beta02) (2026-10-27)
 
 
