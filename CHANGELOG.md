@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/lost-in-tech/cachew/compare/v1.0.1...v1.1.0) (2026-10-28)
+
+
+### Features
+
+* mapped cache builder, single-flight and Redis outage fixes ([#10](https://github.com/lost-in-tech/cachew/issues/10)) ([da2eac8](https://github.com/lost-in-tech/cachew/commit/da2eac8ffddbe8b5b815ce3403ba3ff24c2e9e55))
+
 ## [1.0.1](https://github.com/lost-in-tech/cachew/compare/v1.0.1-beta02...v1.0.1) (2026-10-27)
 
 
