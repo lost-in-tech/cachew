@@ -58,15 +58,19 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
         await SetCoreAsync(BuildKey(key), value, options, cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask<T> GetOrCreateAsync<T>(string key, Func<CancellationToken, Task<T>> factory, CacheEntryOptions<T>? options = null, CancellationToken cancellationToken = default)
+    public async ValueTask<T> GetOrCreateAsync<T>(string key, 
+        Func<CancellationToken, Task<T>> factory, 
+        CacheEntryOptions<T>? options = null, 
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(factory);
 
         var cacheKey = BuildKey(key);
 
-        var (found, cached) = await TryGetAsync<T>(cacheKey, options, cancellationToken).ConfigureAwait(false);
-        if (found)
+        // Only the memory layer is checked here. The distributed read happens inside the single flight,
+        // so a burst of misses makes one round trip rather than one per caller.
+        if (TryGetInMemory(cacheKey, options, out var cached))
         {
             return cached!;
         }
@@ -129,6 +133,15 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
     {
         try
         {
+            // Also catches a flight for this key that completed between the caller's memory miss and
+            // this one taking the slot, which would otherwise run the factory a second time.
+            var (found, cached) = await TryGetAsync(cacheKey, options, CancellationToken.None).ConfigureAwait(false);
+            if (found)
+            {
+                completion.TrySetResult(cached!);
+                return;
+            }
+
             var created = await factory(CancellationToken.None).ConfigureAwait(false);
 
             if (options?.ShouldCache is null || options.ShouldCache(created))
@@ -198,13 +211,13 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
 
     private async ValueTask<(bool Found, T? Value)> TryGetAsync<T>(string cacheKey, CacheEntryOptions<T>? options, CancellationToken cancellationToken)
     {
+        if (TryGetInMemory(cacheKey, options, out var local))
+        {
+            return (true, local);
+        }
+
         var inMemoryTtl = InMemoryTimeToLive(options);
         var distributedTtl = DistributedTimeToLive(options);
-
-        if (inMemoryTtl > TimeSpan.Zero && _memoryCache.TryGetValue(cacheKey, out CacheEnvelope<T>? local) && local is not null)
-        {
-            return (true, local.Value);
-        }
 
         if (distributedTtl <= TimeSpan.Zero)
         {
@@ -249,6 +262,18 @@ internal sealed class TwoLayerCache : ICachew, IDisposable
         }
 
         return (true, envelope.Value);
+    }
+
+    private bool TryGetInMemory<T>(string cacheKey, CacheEntryOptions<T>? options, out T? value)
+    {
+        if (InMemoryTimeToLive(options) > TimeSpan.Zero && _memoryCache.TryGetValue(cacheKey, out CacheEnvelope<T>? local) && local is not null)
+        {
+            value = local.Value;
+            return true;
+        }
+
+        value = default;
+        return false;
     }
 
     // A disabled cache wins over per entry overrides: turning it off from configuration has to turn

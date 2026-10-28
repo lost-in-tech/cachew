@@ -37,6 +37,18 @@ public class RedisUnavailableTests
         Assert.Equal(1, calls);
     }
 
+    [Fact]
+    public async Task A_connection_string_registration_resolves_while_redis_is_down()
+    {
+        var services = new ServiceCollection();
+        services.AddCachewRedis($"127.0.0.1:{ClosedPort()},connectTimeout=500,syncTimeout=500,asyncTimeout=500");
+        using var provider = services.BuildServiceProvider();
+
+        var cache = provider.GetRequiredService<ICachew>();
+
+        Assert.Equal("value", await cache.GetOrCreateAsync("key", _ => Task.FromResult("value")));
+    }
+
     private static async Task<IConnectionMultiplexer> ConnectToNothing()
         => await ConnectionMultiplexer.ConnectAsync(new ConfigurationOptions
         {

@@ -172,6 +172,10 @@ public static class ServiceCollectionExtensions
             ArgumentException.ThrowIfNullOrEmpty(connectionString);
 
             var options = ConfigurationOptions.Parse(connectionString);
+
+            // The distributed layer is best effort, so Redis being down at startup must not stop the
+            // cache from resolving. The multiplexer keeps retrying in the background.
+            options.AbortOnConnectFail = false;
             configure?.Invoke(options);
             return ConnectionMultiplexer.Connect(options);
         });

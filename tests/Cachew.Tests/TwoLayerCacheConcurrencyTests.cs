@@ -103,6 +103,29 @@ public class TwoLayerCacheConcurrencyTests
         Assert.Equal(0, InFlight(cache));
     }
 
+    [Fact]
+    public async Task Concurrent_misses_share_one_distributed_read()
+    {
+        var distributed = new GatedDistributedCache();
+        var cache = new TwoLayerCache(new MemoryCache(new MemoryCacheOptions()), distributed, Options.Create(DefaultOptions));
+        var calls = 0;
+        Task<int> Factory(CancellationToken _) => Task.FromResult(Interlocked.Increment(ref calls));
+
+        // The first caller takes the flight and is held inside its distributed read, so every later
+        // caller arrives while that read is still outstanding.
+        var first = cache.GetOrCreateAsync("key", Factory).AsTask();
+        await distributed.ReadStarted.Task;
+        var others = Enumerable.Range(0, 10).Select(_ => cache.GetOrCreateAsync("key", Factory).AsTask()).ToArray();
+        distributed.ReleaseRead.SetResult();
+
+        var results = await Task.WhenAll(others.Prepend(first));
+
+        Assert.All(results, value => Assert.Equal(1, value));
+        Assert.Equal(1, distributed.Reads);
+        Assert.Equal(1, calls);
+        Assert.Equal(0, InFlight(cache));
+    }
+
     private static TwoLayerCache CreateCache(out IDistributedCache distributed)
     {
         distributed = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
@@ -117,4 +140,38 @@ public class TwoLayerCacheConcurrencyTests
         => ((System.Collections.ICollection)typeof(TwoLayerCache)
             .GetField("_inFlight", BindingFlags.NonPublic | BindingFlags.Instance)!
             .GetValue(cache)!).Count;
+
+    /// <summary>An empty distributed layer whose reads wait until released, and are counted.</summary>
+    private sealed class GatedDistributedCache : IDistributedCache
+    {
+        private int _reads;
+
+        public TaskCompletionSource ReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource ReleaseRead { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int Reads => Volatile.Read(ref _reads);
+
+        public async Task<byte[]?> GetAsync(string key, CancellationToken token = default)
+        {
+            Interlocked.Increment(ref _reads);
+            ReadStarted.TrySetResult();
+            await ReleaseRead.Task;
+            return null;
+        }
+
+        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default) => Task.CompletedTask;
+
+        public Task RemoveAsync(string key, CancellationToken token = default) => Task.CompletedTask;
+
+        public Task RefreshAsync(string key, CancellationToken token = default) => Task.CompletedTask;
+
+        public byte[]? Get(string key) => throw new NotSupportedException();
+
+        public void Set(string key, byte[] value, DistributedCacheEntryOptions options) => throw new NotSupportedException();
+
+        public void Remove(string key) => throw new NotSupportedException();
+
+        public void Refresh(string key) => throw new NotSupportedException();
+    }
 }
