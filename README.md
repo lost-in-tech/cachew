@@ -2,6 +2,25 @@
 
 Two layer caching for .NET: an in-memory layer in front of a distributed layer.
 
+## Contents
+
+Read Getting started and Fluent style first, which is all you need to use the library. The sections
+after them are reference material to come back to when you need it.
+
+- [How it works](#how-it-works)
+- [Install](#install)
+- [Getting started](#getting-started)
+- [Fluent style](#fluent-style)
+- [Layers and lifetimes](#layers-and-lifetimes)
+- [Redis](#redis)
+- [Turning the cache off](#turning-the-cache-off)
+- [Distributed layer failures](#distributed-layer-failures)
+- [Invalidation across instances](#invalidation-across-instances)
+- [Evolving cached values](#evolving-cached-values)
+- [Rolling it out](#rolling-it-out)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+
 ## How it works
 
 A read walks three steps, cheapest first:
@@ -20,6 +39,17 @@ get(key)
 
 Writes fill both layers, removes clear both, and concurrent misses for one key are coalesced so a burst
 of callers runs the factory once.
+
+## Terms used below
+
+- **Time to live (TTL):** how long an entry is kept before it expires.
+- **Factory:** the function you pass in that loads the value, for example from your database. It runs
+  only on a miss.
+- **Coalesced:** when many callers miss the same key at once, the factory runs once and they all share
+  its result.
+- **Backplane:** an optional message channel (Redis pub/sub) that tells other instances to drop their
+  in-memory copy of a key you changed.
+- **Fire-and-forget:** sending a command to Redis without waiting for its reply.
 
 ## Status
 
@@ -92,6 +122,34 @@ async Task<Product?> LoadProduct(int id, CancellationToken ct)
     => await LoadFromDatabaseAsync(id, ct);
 ```
 
+`localhost:6379` needs a Redis server running. To start one locally, run
+`docker run -p 6379:6379 redis`. To try the library with no server at all, use the
+`AddDistributedMemoryCache()` form above.
+
+### Reading, writing and removing
+
+`GetOrCreateAsync` is the one you will use most. The other three are for when you want control:
+
+```csharp
+// Read only. Returns default (null for a class) on a miss, and the factory is not run.
+var product = await cache.GetAsync<Product>("product:1", ct);
+
+// Write a value yourself.
+await cache.SetAsync("product:1", product, cancellationToken: ct);
+
+// Remove it from both layers, for example after you update the product.
+await cache.RemoveAsync("product:1", ct);
+```
+
+Things worth knowing on day one:
+
+- **A miss and a cached default look the same from `GetAsync`.** For `GetAsync<int>`, a miss and a
+  cached `0` both return `0`. Use `GetOrCreateAsync` when that distinction matters.
+- **`null` is cached by default.** If your factory returns `null` for "not found", that `null` is
+  stored for the whole lifetime. Pass `ShouldCache = value => value is not null` (see below) to skip it.
+- **A factory that throws caches nothing.** Every caller waiting on that key gets the same
+  exception, and the next call tries the factory again.
+
 ### A first tweak
 
 Every setting has a per call override, and `GetOrCreateAsync` coalesces concurrent misses for the same
@@ -112,6 +170,44 @@ await cache.GetOrCreateAsync(
     },
     ct);
 ```
+
+## Fluent style
+
+The same policy can be built fluently:
+
+```csharp
+var product = await cache
+    .OnCacheMiss(ct => LoadFromDatabaseAsync(id, ct))
+    .CacheIf(product => product is not null)
+    .ExpireIn(inMemorySeconds: 30, distributedSeconds: 300)
+    .GetAsync($"product:{id}", ct);
+```
+
+`OnCacheMiss` starts the operation, `CacheIf` is optional, and `ExpireIn` takes `TimeSpan` or
+`int` seconds with the same null-means-default and zero-means-disabled rules as
+`CacheEntryOptions<T>`. The terminal `GetAsync` runs the same coalesced get-or-create. A builder can
+be reused across keys, since configuring it does not consume it.
+
+### Caching something other than what the factory returns
+
+Sometimes the factory returns more than you want to store, for example an API response where you
+want to check a success flag but cache only the body. Pass a second function that picks what is
+cached and returned. `CacheIf` then sees the factory's result, not the picked value:
+
+```csharp
+// Your own type: the factory returns this, and only Body is cached.
+record ApiResponse(bool IsSuccess, string Body);
+
+var body = await cache
+    .OnCacheMiss(ct => CallApiAsync(id, ct), response => response.Body) // Task<ApiResponse> -> string
+    .CacheIf(response => response.IsSuccess)   // decided from the whole response
+    .ExpireIn(inMemorySeconds: 30, distributedSeconds: 300)
+    .GetAsync($"page:{id}", ct);
+```
+
+On a miss the function is always run, even when `CacheIf` says not to cache, so it has to work for
+every result (including failures). The picked value is returned either way. The same thing is
+available without the builder as `GetOrCreateAsync(key, factory, select, shouldCache, ...)`.
 
 ## Layers and lifetimes
 
@@ -170,133 +266,6 @@ memory pressure can call `MemoryCache.Compact` itself.
 
 A null `KeyPrefix` or `SerializerOptions` fails at construction rather than silently misbehaving, and
 options are read once at startup, so changing them at runtime has no effect.
-
-## Turning the cache off
-
-`CachewOptions.Enabled` defaults to `true`. Setting it to `false` turns the cache off: nothing is
-stored, nothing is returned, and the instance takes no part in cross instance invalidation. Concurrent
-misses for a key are still coalesced, so a burst makes one call to the factory, which is the case where
-that matters most. It wins over per entry overrides, so an `InMemoryTimeToLive` on an entry cannot
-re-enable caching that the configuration turned off.
-
-Because the options bind from configuration, an operator can turn the cache off without a deployment:
-
-```csharp
-builder.Services.Configure<CachewOptions>(builder.Configuration.GetSection("Cachew"));
-builder.Services.AddCachew();
-```
-
-```json
-{
-  "Cachew": {
-    "Enabled": false,
-    "KeyPrefix": "myapp:",
-    "DefaultInMemoryTimeToLive": "00:01:00",
-    "DefaultDistributedTimeToLive": "00:10:00"
-  }
-}
-```
-
-It is read at startup, so it needs a restart to take effect.
-
-## Distributed layer failures
-
-The distributed layer is best effort. If it throws, a read behaves as a miss and a write or a
-remove becomes a no-op, so an outage does not become an application error. The in-memory layer is
-still populated and still cleared. Cancellation is the exception, since an
-`OperationCanceledException` always propagates. Serialization happens outside that guard, so a value
-that cannot be serialized still throws.
-
-Because remove degrades as well, invalidation is best effort: if the remove fails, other processes
-can serve a stale value until it expires.
-
-The connection string overloads of `AddCachewRedis` set `AbortOnConnectFail = false` and
-`BacklogPolicy.FailFast`, so the app starts while Redis is down and a command fails at once rather than
-waiting in the backlog for its timeout, five seconds by default, on every miss. If you register your
-own multiplexer, set both yourself. A Redis that is reachable but not answering still costs
-`asyncTimeout` per read, which you can lower in the connection string.
-
-## Invalidation across instances
-
-Each instance has its own in-memory layer, so by default a change on one instance is invisible to the
-others until their copies expire, which is up to their in-memory time to live, one minute by default.
-`Cachew.Redis` closes that gap with a backplane: invalidating a key publishes it over Redis pub/sub and
-every other instance drops its own copy straight away.
-
-```csharp
-builder.Services.AddCachewRedis("localhost:6379"); // the cache, over Redis
-builder.Services.AddCachewBackplane();             // optional: enable cross instance invalidation
-```
-
-Notifications are published when a value is cached and when a key is removed, because both change what
-the other instances are holding. That is one message per write and per remove, which is why the whole
-backplane is opt in: enabling it is the decision that accepts that traffic, and not enabling it costs
-nothing. They are best effort, on the same terms as everything else here:
-
-- An instance that misses a notification, or that was restarting at the time, keeps its stale copy
-  until that copy expires. The worst case is therefore the behaviour without a backplane at all; the
-  normal case is that the other instances are correct immediately. Messages are not replayed, so an
-  instance only sees what is published after it subscribes.
-- A notification can arrive before the write that caused it has reached Redis, because writes are
-  fire-and-forget. The instance that receives it may then read the previous value and cache that
-  again, so an invalidation can extend staleness rather than end it. Same bound: the in-memory time to
-  live.
-- Evicting a key that is not there does nothing, so sharing a channel with an unrelated application is
-  harmless. Instances that must see each other have to pass the same `channel` to `AddCachewBackplane`.
-
-If none of that is good enough for particular data, keep `DefaultInMemoryTimeToLive` short for values
-that change often, or bypass the in-memory layer for a key by passing
-`InMemoryTimeToLive = TimeSpan.Zero` on both the write and the read, so every read goes to the
-distributed layer.
-
-## Evolving cached values
-
-The library does not version your payloads, you do, in the key:
-
-```csharp
-var product = await cache.GetAsync<Product>($"product:{id}:v1", ct);
-```
-
-Bump the suffix when you change the shape of what you cache. Nothing then needs invalidating, the
-old keyspace ages out on its own, and rolling back just means reading `v1` again.
-`CachewOptions.KeyPrefix` is the same idea for the whole application, so a global change is a
-configuration edit rather than a code change. One key means one type: if a value's type changes,
-change the key with it.
-
-The payload is JSON written with `CachewOptions.SerializerOptions`. It starts from the web defaults
-(camel case property names, case insensitive reads, numbers readable from strings) plus two choices:
-nulls are not written, and enums are written as their names rather than numbers, so reordering enum
-members cannot silently reinterpret an entry that is already cached. Reads remain compatible with
-payloads written before those two choices, because a missing property deserializes to its default
-and enum numbers are still accepted. Changing the serializer changes the format, so treat that like
-any other payload change and bump the key.
-
-If a payload does not fit the type being read, deserialization fails. That entry is treated as a
-cache miss and a warning is logged through `ILogger<TwoLayerCache>` when logging is registered, so
-the caller still gets a value from the factory and the next write replaces the entry with the
-current shape. The cause is still worth chasing: the key holds either a forgotten version bump or
-the wrong type. A payload with no expiry, or a literal JSON null, is a miss as well, which is the
-hook the library will use if the envelope format itself ever changes. Worth being explicit about the
-residual gap: a conflicting type whose JSON shape happens to match cannot be detected at all,
-because the bytes are valid for both types. That is why one key means one type is a convention and
-not a runtime guarantee.
-
-## Fluent style
-
-The same policy can be built fluently:
-
-```csharp
-var product = await cache
-    .OnCacheMiss(ct => LoadFromDatabaseAsync(id, ct))
-    .CacheIf(product => product is not null)
-    .ExpireIn(inMemorySeconds: 30, distributedSeconds: 300)
-    .GetAsync($"product:{id}", ct);
-```
-
-`OnCacheMiss` starts the operation, `CacheIf` is optional, and `ExpireIn` takes `TimeSpan` or
-`int` seconds with the same null-means-default and zero-means-disabled rules as
-`CacheEntryOptions<T>`. The terminal `GetAsync` runs the same coalesced get-or-create. A builder can
-be reused across keys, since configuring it does not consume it.
 
 ## Redis
 
@@ -375,6 +344,120 @@ builder.Services.Configure<RedisCachewOptions>(builder.Configuration.GetSection(
 { "Cachew": { "Redis": { "FireAndForget": false } } }
 ```
 
+## Turning the cache off
+
+`CachewOptions.Enabled` defaults to `true`. Setting it to `false` turns the cache off: nothing is
+stored, nothing is returned, and the instance takes no part in cross instance invalidation. Concurrent
+misses for a key are still coalesced, so a burst makes one call to the factory, which is the case where
+that matters most. It wins over per entry overrides, so an `InMemoryTimeToLive` on an entry cannot
+re-enable caching that the configuration turned off.
+
+Because the options bind from configuration, an operator can turn the cache off without a deployment:
+
+```csharp
+builder.Services.Configure<CachewOptions>(builder.Configuration.GetSection("Cachew"));
+builder.Services.AddCachew();
+```
+
+```json
+{
+  "Cachew": {
+    "Enabled": false,
+    "KeyPrefix": "myapp:",
+    "DefaultInMemoryTimeToLive": "00:01:00",
+    "DefaultDistributedTimeToLive": "00:10:00"
+  }
+}
+```
+
+It is read at startup, so it needs a restart to take effect.
+
+## Distributed layer failures
+
+The distributed layer is best effort. If it throws, a read behaves as a miss and a write or a
+remove becomes a no-op, so an outage does not become an application error. The in-memory layer is
+still populated and still cleared. Cancellation is the exception, since an
+`OperationCanceledException` always propagates. Serialization happens outside that guard, so a value
+that cannot be serialized still throws.
+
+Because remove degrades as well, invalidation is best effort: if the remove fails, other processes
+can serve a stale value until it expires.
+
+The connection string overloads of `AddCachewRedis` set `AbortOnConnectFail = false` and
+`BacklogPolicy.FailFast`, so the app starts while Redis is down and a command fails at once rather than
+waiting in the backlog for its timeout, five seconds by default, on every miss. If you register your
+own multiplexer, set both yourself. A Redis that is reachable but not answering still costs
+`asyncTimeout` per read, which you can lower in the connection string.
+
+## Invalidation across instances
+
+Each instance has its own in-memory layer, so by default a change on one instance is invisible to the
+others until their copies expire, which is up to their in-memory time to live, one minute by default.
+`Cachew.Redis` closes that gap with a backplane: invalidating a key publishes it over Redis pub/sub and
+every other instance drops its own copy straight away.
+
+```csharp
+builder.Services.AddCachewRedis("localhost:6379"); // the cache, over Redis
+builder.Services.AddCachewBackplane();             // optional: enable cross instance invalidation
+```
+
+The details below are about edge cases, so you can skip them on a first read.
+
+Notifications are published when a value is cached and when a key is removed, because both change what
+the other instances are holding. That is one message per write and per remove, which is why the whole
+backplane is opt in: enabling it is the decision that accepts that traffic, and not enabling it costs
+nothing. They are best effort, on the same terms as everything else here:
+
+- An instance that misses a notification, or that was restarting at the time, keeps its stale copy
+  until that copy expires. The worst case is therefore the behaviour without a backplane at all; the
+  normal case is that the other instances are correct immediately. Messages are not replayed, so an
+  instance only sees what is published after it subscribes.
+- A notification can arrive before the write that caused it has reached Redis, because writes are
+  fire-and-forget. The instance that receives it may then read the previous value and cache that
+  again, so an invalidation can extend staleness rather than end it. Same bound: the in-memory time to
+  live.
+- Evicting a key that is not there does nothing, so sharing a channel with an unrelated application is
+  harmless. Instances that must see each other have to pass the same `channel` to `AddCachewBackplane`.
+
+If none of that is good enough for particular data, keep `DefaultInMemoryTimeToLive` short for values
+that change often, or bypass the in-memory layer for a key by passing
+`InMemoryTimeToLive = TimeSpan.Zero` on both the write and the read, so every read goes to the
+distributed layer.
+
+## Evolving cached values
+
+The library does not version your payloads, you do, in the key:
+
+```csharp
+var product = await cache.GetAsync<Product>($"product:{id}:v1", ct);
+```
+
+Bump the suffix when you change the shape of what you cache. Nothing then needs invalidating, the
+old keyspace ages out on its own, and rolling back just means reading `v1` again.
+`CachewOptions.KeyPrefix` is the same idea for the whole application, so a global change is a
+configuration edit rather than a code change. One key means one type: if a value's type changes,
+change the key with it.
+
+The payload is JSON written with `CachewOptions.SerializerOptions`. It starts from the web defaults
+(camel case property names, case insensitive reads, numbers readable from strings) plus two choices:
+nulls are not written, and enums are written as their names rather than numbers, so reordering enum
+members cannot silently reinterpret an entry that is already cached. Reads remain compatible with
+payloads written before those two choices, because a missing property deserializes to its default
+and enum numbers are still accepted. Changing the serializer changes the format, so treat that like
+any other payload change and bump the key.
+
+The rest of this section covers edge cases, so you can skip it on a first read.
+
+If a payload does not fit the type being read, deserialization fails. That entry is treated as a
+cache miss and a warning is logged through `ILogger<TwoLayerCache>` when logging is registered, so
+the caller still gets a value from the factory and the next write replaces the entry with the
+current shape. The cause is still worth chasing: the key holds either a forgotten version bump or
+the wrong type. A payload with no expiry, or a literal JSON null, is a miss as well, which is the
+hook the library will use if the envelope format itself ever changes. Worth being explicit about the
+residual gap: a conflicting type whose JSON shape happens to match cannot be detected at all,
+because the bytes are valid for both types. That is why one key means one type is a convention and
+not a runtime guarantee.
+
 ## Rolling it out
 
 An order that keeps the first week boring:
@@ -390,7 +473,8 @@ An order that keeps the first week boring:
    connection that is closed is noticed at once; one that goes quiet without closing is noticed when the
    multiplexer next probes it, which `KeepAlive` governs and defaults to a minute.
 5. If values are large or keys are high cardinality, set `MemoryCacheSizeLimit`. It counts entries
-   rather than bytes, so it bounds memory only as far as values are small.
+   rather than bytes, so it bounds memory only as far as values are small. It applies to the shared
+   `IMemoryCache`, so first check that nothing else in the app adds entries without a size.
 
 ## Troubleshooting
 
@@ -403,8 +487,13 @@ An order that keeps the first week boring:
 | A warning about deserialization | One key is being read as two types, or a payload predates a shape change. See [Evolving cached values](#evolving-cached-values). |
 | Warnings about the distributed layer | Redis is unreachable. Reads become misses and writes become no-ops until it returns. |
 | Two applications do not share entries | Different `KeyPrefix` values are different keyspaces. |
+| `InvalidOperationException` about a `Size` after setting `MemoryCacheSizeLimit` | Other code is adding entries to the shared `IMemoryCache` without a size. Remove the limit, or give those entries a size. |
+| Every miss is slow while Redis is down | You registered your own multiplexer. Set `AbortOnConnectFail = false` and `BacklogPolicy.FailFast` on it. The connection string overloads already do. |
+| Nothing is cached for "not found" results, or too much is | `null` is cached by default. Use `ShouldCache` (or `CacheIf`) to choose. |
 
-## Build
+## Contributing
+
+### Build
 
 ```bash
 dotnet build cachew.slnx --configuration Release
@@ -423,7 +512,7 @@ dotnet run --project tests/Cachew.Package.Smoke --configuration Release
 That needs a Redis. CI runs the same two commands, on a clean machine. If you repack a version you have
 already restored, remove `tests/Cachew.Package.Smoke/obj` first, because NuGet caches by id and version.
 
-## Benchmarks
+### Benchmarks
 
 `tests/Cachew.Benchmarks` measures the hot read and write paths with BenchmarkDotNet. It is in the
 solution, so CI builds it, but it is not a test project, so CI does not run it. Run it on demand:
@@ -432,7 +521,7 @@ solution, so CI builds it, but it is not a test project, so CI does not run it. 
 dotnet run --project tests/Cachew.Benchmarks --configuration Release
 ```
 
-## Releasing
+### Releasing
 
 Releases are driven by release-please. Merge conventional commits to `main` (`feat:`, `fix:`, or `!`
 for a breaking change) and it opens a release pull request that bumps `version.txt`, the `<Version>`
