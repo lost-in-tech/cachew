@@ -19,7 +19,8 @@ public sealed class CachewOptions
     /// Maximum number of entries the in-memory layer keeps, or <c>null</c> for no limit, which is the
     /// default. Entries are sized as one, so this counts entries rather than bytes, and therefore bounds
     /// memory only as far as values are small. A limit configured directly on <c>MemoryCacheOptions</c>
-    /// wins over this one.
+    /// wins over this one. The limit applies to the app-wide <c>IMemoryCache</c>, so other code adding
+    /// entries to it without a size throws once it is set.
     /// </summary>
     public long? MemoryCacheSizeLimit { get; set; }
 

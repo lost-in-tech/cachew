@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,15 +39,20 @@ public class RedisUnavailableTests
     }
 
     [Fact]
-    public async Task A_connection_string_registration_resolves_while_redis_is_down()
+    public async Task A_connection_string_registration_resolves_and_misses_quickly_while_redis_is_down()
     {
+        // Default timeouts on purpose: a command held in the backlog would wait five seconds.
         var services = new ServiceCollection();
-        services.AddCachewRedis($"127.0.0.1:{ClosedPort()},connectTimeout=500,syncTimeout=500,asyncTimeout=500");
+        services.AddCachewRedis($"127.0.0.1:{ClosedPort()}");
+        services.AddCachewBackplane();
         using var provider = services.BuildServiceProvider();
+        var elapsed = Stopwatch.StartNew();
 
         var cache = provider.GetRequiredService<ICachew>();
+        var value = await cache.GetOrCreateAsync("key", _ => Task.FromResult("value"));
 
-        Assert.Equal("value", await cache.GetOrCreateAsync("key", _ => Task.FromResult("value")));
+        Assert.Equal("value", value);
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(2), $"Took {elapsed.Elapsed}.");
     }
 
     private static async Task<IConnectionMultiplexer> ConnectToNothing()

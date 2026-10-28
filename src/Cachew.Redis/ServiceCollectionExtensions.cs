@@ -173,9 +173,11 @@ public static class ServiceCollectionExtensions
 
             var options = ConfigurationOptions.Parse(connectionString);
 
-            // The distributed layer is best effort, so Redis being down at startup must not stop the
-            // cache from resolving. The multiplexer keeps retrying in the background.
+            // The distributed layer is best effort, so Redis being down must neither stop the cache
+            // from resolving nor hold each command in the backlog until it times out: failing at once
+            // turns a read into a plain miss. The multiplexer keeps reconnecting in the background.
             options.AbortOnConnectFail = false;
+            options.BacklogPolicy = BacklogPolicy.FailFast;
             configure?.Invoke(options);
             return ConnectionMultiplexer.Connect(options);
         });

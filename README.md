@@ -159,6 +159,10 @@ counts entries rather than bytes, which bounds memory only as far as values are 
 builder.Services.AddCachew(options => options.MemoryCacheSizeLimit = 10_000);
 ```
 
+The limit applies to the app-wide `IMemoryCache`, which Cachew shares with the rest of the application.
+Once it is set, any other code that adds an entry to that cache without a `Size` throws
+`InvalidOperationException`, so set it only when everything else using `IMemoryCache` sets a size.
+
 A limit configured directly on `MemoryCacheOptions` wins over that one whatever order it is registered
 in, because the library's value only fills in when there is none of its own. When a limit is exceeded
 the cache compacts by `CompactionPercentage`, five percent by default, and a host reacting to real
@@ -205,6 +209,12 @@ that cannot be serialized still throws.
 
 Because remove degrades as well, invalidation is best effort: if the remove fails, other processes
 can serve a stale value until it expires.
+
+The connection string overloads of `AddCachewRedis` set `AbortOnConnectFail = false` and
+`BacklogPolicy.FailFast`, so the app starts while Redis is down and a command fails at once rather than
+waiting in the backlog for its timeout, five seconds by default, on every miss. If you register your
+own multiplexer, set both yourself. A Redis that is reachable but not answering still costs
+`asyncTimeout` per read, which you can lower in the connection string.
 
 ## Invalidation across instances
 

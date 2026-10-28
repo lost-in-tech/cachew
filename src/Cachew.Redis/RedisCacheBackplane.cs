@@ -90,7 +90,19 @@ public sealed class RedisCacheBackplane : ICachewBackplane, IDisposable
             }
         }
 
-        _subscriber.Subscribe(_channel, Handler);
+        try
+        {
+            _subscriber.Subscribe(_channel, Handler);
+        }
+        catch (Exception exception) when (exception is RedisException or TimeoutException)
+        {
+            // The multiplexer keeps the handler and subscribes once Redis is reachable, so an outage at
+            // startup must not stop the cache from being created.
+            _logger?.LogWarning(
+                exception,
+                "Could not subscribe to channel '{Channel}' yet; the subscription is restored once Redis is reachable.",
+                _channel);
+        }
 
         var subscription = new Subscription(() => _subscriber.Unsubscribe(_channel, Handler));
         _subscriptions.Add(subscription);

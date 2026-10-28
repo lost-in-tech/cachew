@@ -86,3 +86,46 @@ public sealed class RedisBackplaneRecoveryTests
     private static long Subscribers(IDatabase database, string channel)
         => (long)database.Execute("PUBSUB", "NUMSUB", channel)[1];
 }
+
+/// <summary>
+/// A backplane created while Redis is down has to start receiving once Redis comes up, because the
+/// cache subscribes once, when it is created, and does not retry.
+/// </summary>
+public sealed class RedisBackplaneStartupTests
+{
+    [Fact]
+    public async Task A_subscription_made_while_redis_is_down_works_once_redis_starts()
+    {
+        var port = ClosedPort();
+        var options = ConfigurationOptions.Parse($"127.0.0.1:{port}");
+        options.AbortOnConnectFail = false;
+        options.BacklogPolicy = BacklogPolicy.FailFast;
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(options);
+
+        using var subscriber = new RedisCacheBackplane(connection, "cachew:test-backplane-startup");
+        var received = new ConcurrentBag<string>();
+        using var subscription = subscriber.Subscribe(received.Add);
+
+        await using var container = new RedisBuilder("redis:7.4").WithPortBinding(port, 6379).Build();
+        await container.StartAsync();
+        await using var other = await ConnectionMultiplexer.ConnectAsync(container.GetConnectionString());
+        using var publisher = new RedisCacheBackplane(other, "cachew:test-backplane-startup");
+
+        await TestWait.Eventually(async () =>
+        {
+            await publisher.PublishAsync("key");
+            return received.Contains("key");
+        }, seconds: 30);
+
+        Assert.Contains("key", received);
+    }
+
+    private static int ClosedPort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+}
